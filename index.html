@@ -902,6 +902,13 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .fecho-dia{display:flex;gap:9px;align-items:flex-start;font-size:0.7812em;color:var(--tinta2);padding:9px 12px;margin:2px 0 8px;border-left:2px solid var(--linha)}
 .fecho-dia b{color:var(--tinta);font-weight:600}
 .fecho-dia .muda{margin-top:2px;color:var(--tinta3)}
+.conexao{margin:-2px 0 9px 14px;padding:9px 12px;border-left:2px solid var(--linha);font-size:0.75em;color:var(--tinta2);line-height:1.4}
+.conexao.ape{display:flex;align-items:center;gap:6px;color:var(--tinta3);padding:2px 12px}
+.conexao.apertado{border-left-color:var(--ambar);background:var(--cartao);border-radius:0 10px 10px 0}
+.conexao.falta{border-left-color:var(--azul);background:var(--cartao);border-radius:0 10px 10px 0}
+.conexao .cx-tit{display:flex;align-items:center;gap:6px;font-weight:700;color:var(--tinta);margin-bottom:3px}
+.conexao.apertado .cx-tit{color:var(--ambar)}
+.conexao .cx-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .grupo{border:1px solid var(--linha);border-radius:12px;background:var(--cartao);margin-bottom:10px}
 .grupo-cab{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;background:none;border:0;text-align:left;font-weight:600;font-size:0.875em;color:var(--tinta)}
 .grupo-cab .t{flex:0 0 auto}
@@ -1352,7 +1359,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 20:07"
+  versao: "2026-10-05 22:07"
 };
 
 /* ============================================================
@@ -1582,19 +1589,100 @@ function pendenciasDoEvento(e, doDia) {
   const p = [];
   if (!e.horaInicio) p.push("Sem horario");
   if (TIPOS_COM_LUGAR.indexOf(e.tipo) >= 0 && e.lat == null && e.latIni == null) p.push("Sem localizacao");
-  if (TIPOS_RESERVA.indexOf(e.tipo) >= 0 && !e.reserva && (!e.status || e.status === "previsto")) p.push("Falta reservar");
+  if (TIPOS_RESERVA.indexOf(e.tipo) >= 0 && !e.reserva && e.reservaStatus !== "reservado" && e.reservaStatus !== "confirmado") p.push("Falta reservar");
   if (e.horaInicio && !e.fundo) {
     const i = inicioAbs(e),
       f = fimAbs(e);
     const choca = (doDia || []).some(x => x.id !== e.id && !x.fundo && !x.saidaDe && x.status !== "cancelado" && x.horaInicio && inicioAbs(x) < f && fimAbs(x) > i);
     if (choca) p.push("Conflito de horario");
   }
+  if (divergenciaDuracao(e)) p.push("Duracao difere da fonte");
   if (e.tipo === "transfer" && e.latIni != null && e.lat != null && e.duracaoMin) {
     const t = estimarTrajeto(distanciaKm(e.latIni, e.lngIni, e.lat, e.lng));
     if (e.duracaoMin < t.min * 0.6) p.push("Duracao curta para o trajeto");
   }
   return p;
 }
+/* ---------- Conexao entre eventos (P1-2, P1-3, P1-4) ----------
+   Para cada par de eventos seguidos do dia: onde o primeiro termina e onde o
+   segundo comeca. Se mudou de lugar, estima o trajeto e compara com o intervalo.
+   - apertado: o intervalo nao cobre trajeto + margem do proximo
+   - sem transporte: mudou de lugar (mais de 1,5 km) e nao ha deslocamento lancado
+   - a pe: trecho curto, so informa o tempo
+   Sempre explica o motivo; o usuario pode ignorar (fica em dados.ignorados). */
+const MARGEM_CHEGADA = {
+  voo: 120,
+  escala: 0,
+  transfer: 5,
+  refeicao: 10,
+  passeio: 15,
+  evento: 15,
+  hotel: 0
+};
+const pontoFim = e => e.lat != null ? {
+  lat: e.lat,
+  lng: e.lng
+} : null;
+const pontoIni = e => e.latIni != null ? {
+  lat: e.latIni,
+  lng: e.lngIni
+} : e.lat != null ? {
+  lat: e.lat,
+  lng: e.lng
+} : null;
+function conexoesDoDia(itens, ignorados) {
+  const l = (itens || []).filter(e => !e.saidaDe && !e.fundo && e.status !== "cancelado" && e.horaInicio && inicioAbs(e) != null).sort((a, b) => inicioAbs(a) - inicioAbs(b));
+  const r = {};
+  for (let i = 0; i < l.length - 1; i++) {
+    const a = l[i],
+      b = l[i + 1];
+    const chave = a.id + ">" + b.id;
+    if (ignorados && ignorados[chave]) continue;
+    const pa = pontoFim(a),
+      pb = pontoIni(b);
+    if (!pa || !pb) continue;
+    const km = distanciaKm(pa.lat, pa.lng, pb.lat, pb.lng);
+    if (km < 0.3) continue;
+    const t = estimarTrajeto(km);
+    const intervalo = Math.round((inicioAbs(b) - fimAbs(a)) / 60000);
+    const margem = MARGEM_CHEGADA[b.tipo] != null ? MARGEM_CHEGADA[b.tipo] : 10;
+    const chegaDeTrecho = a.tipo === "voo" || a.tipo === "transfer";
+    const base = {
+      chave: chave,
+      a: a,
+      b: b,
+      km: km,
+      min: t.min,
+      modo: t.modo,
+      intervalo: intervalo,
+      margem: margem,
+      chegaDeTrecho: chegaDeTrecho
+    };
+    if (intervalo < t.min + margem) r[a.id] = Object.assign(base, {
+      tipo: "apertado",
+      falta: t.min + margem - intervalo
+    });else if (t.modo === "a pe") r[a.id] = Object.assign(base, {
+      tipo: "ape"
+    });else if (km <= 15 && !chegaDeTrecho) r[a.id] = Object.assign(base, {
+      tipo: "carro"
+    });else r[a.id] = Object.assign(base, {
+      tipo: "semTransporte"
+    });
+  }
+  return r;
+}
+const durCurta = m => m >= 60 ? Math.floor(m / 60) + "h" + (m % 60 ? String(m % 60).padStart(2, "0") : "") : m + " min";
+// texto que explica a sugestao (sempre com o motivo)
+function textoConexao(c) {
+  const fa = fmtHora(fimAbs(c.a), c.a.tzFim != null ? c.a.tzFim : c.a.tz),
+    ib = fmtHora(inicioAbs(c.b), c.b.tz);
+  const dist = (c.km < 10 ? c.km.toFixed(1).replace(".", ",") : Math.round(c.km)) + " km";
+  const onde = c.a.cidade || c.a.localFim || "";
+  if (c.tipo === "apertado") return c.chegaDeTrecho ? "Voce chega" + (onde ? " a " + onde : "") + " as " + fa + " e " + c.b.titulo + " comeca as " + ib + ". O trajeto leva ~" + durCurta(c.min) + " (" + dist + ")" + (c.margem ? " e e bom chegar " + durCurta(c.margem) + " antes" : "") + ". Faltam ~" + durCurta(c.falta) + "." : c.a.titulo + " termina as " + fa + ". " + c.b.titulo + " comeca as " + ib + " e fica a ~" + durCurta(c.min) + " (" + dist + ")" + (c.margem ? ", com " + durCurta(c.margem) + " de margem" : "") + ". Faltam ~" + durCurta(c.falta) + ".";
+  if (c.tipo === "semTransporte") return c.chegaDeTrecho ? "Voce chega" + (onde ? " a " + onde : "") + " as " + fa + " e o proximo e " + c.b.titulo + ", a ~" + durCurta(c.min) + " " + c.modo + " (" + dist + "). Nao ha deslocamento lancado entre os dois." : "De " + c.a.titulo + " ate " + c.b.titulo + ": ~" + durCurta(c.min) + " " + c.modo + " (" + dist + "). Nao ha deslocamento lancado.";
+  return "~" + durCurta(c.min) + " " + c.modo + " (" + dist + ")";
+}
+
 /* ---------- Localizar automaticamente (P1-6) ---------- */
 const precisaDePonto = e => !!e && !e.saidaDe && e.status !== "cancelado" && TIPOS_COM_LUGAR.indexOf(e.tipo) >= 0 && e.lat == null && e.latIni == null;
 // o que procurar: endereco, lugar de chegada, lugar, ou o titulo sem a palavra do tipo
@@ -2889,7 +2977,41 @@ function lerJson(bruto) {
   }
   throw new Error("A resposta da IA veio cortada. Tente de novo ou cole o roteiro por partes.");
 }
+/* ---------- Base de fusos versionada ----------
+   O offset vem do Intl do aparelho, cujo tzdata pode estar velho. Mudancas de regra
+   publicadas no IANA depois do tzdata que os navegadores trazem ficam aqui, com a
+   versao do tzdb de onde vieram. Sempre que uma entrada daqui for aplicada, o app
+   sabe que corrigiu o aparelho. Atualize "versao" ao incluir uma nova regra. */
+const BASE_FUSOS = {
+  versao: "2026c",
+  correcoes: [
+  // tzdb 2026c (08/07/2026): Marrocos em UTC+0 permanente desde 20/09/2026 01:00 UTC
+  {
+    zonas: ["Africa/Casablanca", "Africa/El_Aaiun"],
+    desde: Date.UTC(2026, 8, 20, 1),
+    offset: 0,
+    fonte: "tzdb 2026c"
+  }]
+};
+// o aparelho ja conhece a regra nova? (Casablanca em 01/12/2026 12:00 UTC tem que dar 12h)
+const tzdataDoAparelhoAtual = (() => {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "Africa/Casablanca",
+      hour: "2-digit",
+      hourCycle: "h23"
+    }).format(Date.UTC(2026, 11, 1, 12)) === "12";
+  } catch (e) {
+    return false;
+  }
+})();
+function correcaoDeFuso(nomeFuso, instante) {
+  for (const c of BASE_FUSOS.correcoes) if (c.zonas.indexOf(nomeFuso) >= 0 && instante >= c.desde) return c;
+  return null;
+}
 function offsetDoFuso(nomeFuso, dataIso) {
+  const corr = correcaoDeFuso(nomeFuso, Date.parse(dataIso + "T12:00:00Z"));
+  if (corr) return corr.offset;
   try {
     const d = new Date(dataIso + "T12:00:00Z");
     const f = new Intl.DateTimeFormat("en-US", {
@@ -2976,6 +3098,7 @@ function fusoParaEvento(f, nomeIni, nomeFim, manterFimLocal) {
   }
   if (tz !== f.tz) patch.tz = tz;
   if (tzF !== f.tzFim) patch.tzFim = tzF;
+  if ("tz" in patch || "tzFim" in patch) patch.tzBase = BASE_FUSOS.versao;
   if (manterFimLocal && f.horaInicio && f.duracaoMin && ("tz" in patch || "tzFim" in patch)) {
     // a hora de chegada digitada e local: mantem ela e ajusta a duracao
     const antes = (f.tzFim != null ? f.tzFim : f.tz) - f.tz;
@@ -3249,6 +3372,34 @@ async function recalcularFusos(eventos, viagem, setPasso) {
 
 // ultima conferencia: se o fuso de chegada ficou igual ao de saida num trecho
 // que muda de cidade, pega o fuso do proximo evento que acontece no destino
+// instante real da chegada a partir da hora local declarada no destino (a data mais perto da prevista)
+function chegadaPelaHoraLocal(voo, horaLocal, tzDestino, previsto) {
+  const ini = inicioAbs(voo);
+  if (ini == null || !horaLocal) return null;
+  const base = new Date(previsto + tzDestino * 60000).toISOString().slice(0, 10);
+  let melhor = null;
+  [-1, 0, 1].forEach(k => {
+    const d = new Date(Date.parse(base + "T00:00:00Z") + k * 86400000).toISOString().slice(0, 10);
+    const abs = Date.parse(d + "T" + horaLocal + ":00Z") - tzDestino * 60000;
+    if (abs > ini && (!melhor || Math.abs(abs - previsto) < Math.abs(melhor - previsto))) melhor = abs;
+  });
+  if (melhor == null) return null;
+  const duracao = Math.round((melhor - ini) / 60000);
+  return duracao > 0 && duracao < 2880 ? {
+    abs: melhor,
+    duracao: duracao
+  } : null;
+}
+// a duracao calculada pelos horarios locais difere da que a fonte informou?
+function divergenciaDuracao(e) {
+  if (!e || !e.duracaoFonte || !e.duracaoMin) return null;
+  const dif = e.duracaoMin - e.duracaoFonte;
+  return Math.abs(dif) >= 10 ? {
+    calculada: e.duracaoMin,
+    fonte: e.duracaoFonte,
+    dif: dif
+  } : null;
+}
 function ajustarChegadas(eventos) {
   const norm = t => cidadeCurta(String(t || "")).toLowerCase().trim();
   for (let i = 0; i < eventos.length; i++) {
@@ -3345,7 +3496,21 @@ async function montarEventosDoPlano(bruto, dados, setPasso, inicioPadrao) {
         if (emendaEscala || emendaVoo) {
           // escala comeca quando o voo pousa, e o voo seguinte parte quando a escala acaba
           abs = ultimoFim;
-          if (emendaEscala && e.__corrente) {
+          const oEscala = emendaEscala && cd && cd.fuso ? offsetDoFuso(cd.fuso, dataDia) : null;
+          if (emendaEscala && oEscala != null && eventoAnterior) {
+            // fuso da cidade conhecido: vale o horario local informado. A chegada nao se move
+            // para caber na duracao da fonte; a duracao e que vira a real e a da fonte fica guardada.
+            const r = chegadaPelaHoraLocal(eventoAnterior, hora, oEscala, ultimoFim);
+            tzIni = oEscala;
+            eventoAnterior.tzFim = oEscala;
+            if (r) {
+              abs = r.abs;
+              if (Math.abs(r.duracao - eventoAnterior.duracaoMin) >= 10) {
+                eventoAnterior.duracaoFonte = eventoAnterior.duracaoMin;
+                eventoAnterior.duracaoMin = r.duracao;
+              }
+            }
+          } else if (emendaEscala && e.__corrente) {
             // so deduz o fuso quando a sequencia de cidades foi confirmada
             const deduzido = derivarFuso(abs, hora);
             tzIni = deduzido;
@@ -3397,7 +3562,8 @@ async function montarEventosDoPlano(bruto, dados, setPasso, inicioPadrao) {
         moeda: e.moeda || dados.viagem.moeda || "BRL",
         fundo: !!e.fundo || e.tipo === "hotel",
         lat: null,
-        lng: null
+        lng: null,
+        tzBase: BASE_FUSOS.versao
       });
       eventos.push(novoEvento);
       if (ehDeslocamento) {
@@ -3501,6 +3667,10 @@ function ev(o) {
     lngIni: null,
     tzManual: false,
     tzFimManual: false,
+    duracaoFonte: null,
+    reservaStatus: "",
+    pagamento: "",
+    tzBase: "",
     obs: "",
     looks: {},
     status: "previsto",
@@ -3740,6 +3910,91 @@ const SEMENTE = {
   checkins: [],
   atualizadoEm: 0
 };
+/* ---------- Status em tres dimensoes (P2-7) ----------
+   status        = andamento: previsto (Planejado) | em_andamento | concluido | cancelado
+   reservaStatus = "" (nao informado) | sem | reservado | confirmado
+   pagamento     = "" (nao informado) | nao_pago | parcial | pago
+   Migracao conservadora do status antigo de um campo so: cada valor vai so para a
+   dimensao dele. Pago nao vira reservado, confirmado vai para a reserva e nao vira
+   pago, localizador nao muda a reserva. Nada e deduzido. */
+function migrarStatus(e) {
+  if (!e) return e;
+  if (e.status === "reservado") return Object.assign({}, e, {
+    status: "previsto",
+    reservaStatus: e.reservaStatus || "reservado"
+  });
+  if (e.status === "pago") return Object.assign({}, e, {
+    status: "previsto",
+    pagamento: e.pagamento || "pago"
+  });
+  if (e.status === "confirmado") return Object.assign({}, e, {
+    status: "previsto",
+    reservaStatus: e.reservaStatus || "confirmado"
+  });
+  return e;
+}
+const ANDAMENTO = [{
+  v: "previsto",
+  n: "Planejado"
+}, {
+  v: "em_andamento",
+  n: "Em andamento"
+}, {
+  v: "concluido",
+  n: "Concluido"
+}, {
+  v: "cancelado",
+  n: "Cancelado"
+}];
+const RESERVA_OPC = [{
+  v: "",
+  n: "Nao informado"
+}, {
+  v: "sem",
+  n: "Sem reserva"
+}, {
+  v: "reservado",
+  n: "Reservado"
+}, {
+  v: "confirmado",
+  n: "Confirmado"
+}];
+const PAGAMENTO_OPC = [{
+  v: "",
+  n: "Nao informado"
+}, {
+  v: "nao_pago",
+  n: "Nao pago"
+}, {
+  v: "parcial",
+  n: "Parcial"
+}, {
+  v: "pago",
+  n: "Pago"
+}];
+// selos do cartao: verde quando resolvido, ambar quando ainda falta
+function selosDoEvento(e) {
+  const s = [];
+  if (!e || e.saidaDe || e.status === "cancelado") return s;
+  if (e.reservaStatus === "confirmado") s.push({
+    t: "Reserva confirmada",
+    c: "ok"
+  });else if (e.reservaStatus === "reservado") s.push({
+    t: "Reservado",
+    c: "ok"
+  });
+  if (e.pagamento === "pago") s.push({
+    t: "Pago",
+    c: "ok"
+  });else if (e.pagamento === "parcial") s.push({
+    t: "Pago em parte",
+    c: "atencao"
+  });else if (e.pagamento === "nao_pago") s.push({
+    t: "Nao pago",
+    c: "atencao"
+  });
+  return s;
+}
 function normalizar(d) {
   const base = JSON.parse(JSON.stringify(SEMENTE));
   if (!d) {
@@ -3761,11 +4016,12 @@ function normalizar(d) {
   }
   return {
     viagem: Object.assign({}, base.viagem, d.viagem || {}),
-    eventos: (d.eventos || []).map(e => ev(e)),
+    eventos: (d.eventos || []).map(e => ev(migrarStatus(e))),
     mala: d.mala || [],
     fotos: d.fotos || [],
     checkins: d.checkins || [],
     legendas: d.legendas || {},
+    ignorados: d.ignorados || {},
     docs: d.docs || [],
     feitos: d.feitos || {},
     atualizadoEm: d.atualizadoEm || 0
@@ -5695,13 +5951,14 @@ function ItemEvento({
       color: "var(--ambar)",
       borderColor: "var(--ambar)"
     }
-  }, t)), STATUS_SELO[e.status] && /*#__PURE__*/React.createElement("span", {
+  }, t)), selosDoEvento(e).map(x => /*#__PURE__*/React.createElement("span", {
+    key: x.t,
     className: "tag",
     style: {
-      color: "var(--jade)",
-      borderColor: "var(--jade)"
+      color: x.c === "ok" ? "var(--jade)" : "var(--ambar)",
+      borderColor: x.c === "ok" ? "var(--jade)" : "var(--ambar)"
     }
-  }, STATUS_SELO[e.status]), alerta && /*#__PURE__*/React.createElement("span", {
+  }, x.t)), alerta && /*#__PURE__*/React.createElement("span", {
     className: "tag",
     style: {
       color: "var(--ambar)",
@@ -5819,7 +6076,7 @@ function EstadoNuvem() {
       color: pend ? "var(--ambar)" : "var(--tinta3)",
       textAlign: "center"
     }
-  }, texto, " \u00B7 viagem ", String(VIAGEM_ATUAL || "").slice(-6).toUpperCase());
+  }, texto, " \u00B7 viagem ", String(VIAGEM_ATUAL || "").slice(-6).toUpperCase(), /*#__PURE__*/React.createElement("div", null, "fusos: base ", BASE_FUSOS.versao, tzdataDoAparelhoAtual ? " (aparelho atualizado)" : " (corrige o aparelho)"));
 }
 
 /* ------------------ ABA ROTEIRO ------------------ */
@@ -5830,6 +6087,49 @@ const dataCurtaSemana = iso => {
   const d = new Date(iso + "T12:00:00Z");
   return DIAS_SEM[d.getUTCDay()] + " " + d.getUTCDate() + " " + MESES_CURTOS[d.getUTCMonth()];
 };
+// Entre dois cartoes: tempo a pe, deslocamento faltando ou horario apertado, com o motivo e as acoes
+function Conexao({
+  c,
+  acoes
+}) {
+  if (c.tipo === "ape" || c.tipo === "carro") return /*#__PURE__*/React.createElement("div", {
+    className: "conexao ape"
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: c.tipo === "ape" ? "pessoa" : "transfer",
+    tam: 13
+  }), " ", textoConexao(c));
+  const urlRota = "https://www.google.com/maps/dir/?api=1&origin=" + pontoFim(c.a).lat + "," + pontoFim(c.a).lng + "&destination=" + pontoIni(c.b).lat + "," + pontoIni(c.b).lng;
+  const apertado = c.tipo === "apertado";
+  return /*#__PURE__*/React.createElement("div", {
+    className: "conexao " + (apertado ? "apertado" : "falta")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "cx-tit"
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: apertado ? "relogio" : "transfer",
+    tam: 14
+  }), " ", apertado ? "Horario apertado" : "Deslocamento nao lancado"), /*#__PURE__*/React.createElement("div", {
+    className: "cx-txt"
+  }, textoConexao(c)), /*#__PURE__*/React.createElement("div", {
+    className: "cx-acoes"
+  }, apertado ? /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    onClick: () => acoes.editarEvento(c.b)
+  }, "Ajustar horario") : /*#__PURE__*/React.createElement("button", {
+    className: "pill on",
+    onClick: () => acoes.novoTransfer(c)
+  }, "Criar transfer"), /*#__PURE__*/React.createElement("a", {
+    className: "pill",
+    href: urlRota,
+    target: "_blank",
+    rel: "noopener",
+    style: {
+      textDecoration: "none"
+    }
+  }, "Ver rota"), /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    onClick: () => acoes.ignorarConexao(c.chave)
+  }, apertado ? "Manter assim" : "Ignorar")));
+}
 // Cabecalho do dia: cidade, quantos eventos, das quantas as quantas, tempo em deslocamento e pendencias
 function CabecalhoDia({
   d,
@@ -5840,6 +6140,7 @@ function CabecalhoDia({
   onAdicionar,
   onPendencias
 }) {
+  const cx = Object.values(conexoesDoDia(d.itens, dados.ignorados)).filter(c => c.tipo === "apertado" || c.tipo === "semTransporte").length;
   const tzDia = fusoDoDia(d.itens, d.data, dados.eventos);
   const reais = d.itens.filter(e => !e.saidaDe && e.status !== "cancelado");
   const cidade = cidadeDoDia(d.itens);
@@ -5852,7 +6153,7 @@ function CabecalhoDia({
   const tzIni = primeiro ? primeiro.tz : tzDia;
   const tzFimDia = ultimo ? ultimo.tzFim != null ? ultimo.tzFim : ultimo.tz : tzDia;
   const desloc = reais.filter(e => !e.fundo && (e.tipo === "transfer" || e.tipo === "voo")).reduce((s, e) => s + (e.duracaoMin || 0), 0);
-  const nPend = reais.reduce((s, e) => s + pendenciasDoEvento(e, reais).length, 0) + (trechosDia || 0);
+  const nPend = reais.reduce((s, e) => s + pendenciasDoEvento(e, reais).length, 0) + (trechosDia || 0) + cx;
   const partes = [reais.length ? reais.length + " evento" + (reais.length > 1 ? "s" : "") : "sem eventos"];
   if (ini != null) {
     const pula = Math.floor((fim + tzFimDia * 60000) / 86400000) - Math.floor(Date.parse(d.data + "T00:00:00Z") / 86400000);
@@ -5990,6 +6291,7 @@ function AbaRoteiro({
     return lista;
   }, [ordenados]);
   const [fechados, setFechados] = useState({});
+  let conexoes = {};
   const eventosVisiveis = visiveis.reduce((l, d) => l.concat(d.itens), []).filter(e => !e.saidaDe);
   const custos = somarCustos(eventosVisiveis);
   const temCusto = Object.keys(custos).length > 0;
@@ -6255,7 +6557,10 @@ function AbaRoteiro({
       fontSize: "0.8125em"
     },
     onClick: () => acoes.novoTrecho(t)
-  }, "Lancar")))), (fechados[d.data] ? [] : d.itens).map(e => {
+  }, "Lancar")))), (() => {
+    conexoes = fechados[d.data] ? {} : conexoesDoDia(d.itens, dados.ignorados);
+    return null;
+  })(), (fechados[d.data] ? [] : d.itens).map(e => {
     if (e.saidaDe) {
       const hotel = dados.eventos.find(x => x.id === e.saidaDe);
       return /*#__PURE__*/React.createElement(ItemEvento, {
@@ -6269,8 +6574,9 @@ function AbaRoteiro({
         onExcluir: null
       });
     }
-    return /*#__PURE__*/React.createElement(ItemEvento, {
-      key: e.id,
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: e.id
+    }, /*#__PURE__*/React.createElement(ItemEvento, {
       e: e,
       agora: agora,
       onClick: () => acoes.abrirEvento(e),
@@ -6281,7 +6587,11 @@ function AbaRoteiro({
       alerta: trechos.find(t => t.ev && t.ev.id === e.id),
       onResolver: acoes.editarEvento,
       pendencias: pendenciasDoEvento(e, d.itens)
-    });
+    }), conexoes[e.id] && /*#__PURE__*/React.createElement(Conexao, {
+      key: e.id + "-cx",
+      c: conexoes[e.id],
+      acoes: acoes
+    }));
   }), !fechados[d.data] && /*#__PURE__*/React.createElement(FechoDoDia, {
     d: d,
     dados: dados,
@@ -6317,11 +6627,6 @@ function lerRascunho(id) {
    lat/lng = onde o evento acontece ou chega. latIni/lngIni = de onde sai,
    quando e diferente. A hora de sair mira o ponto de saida; o mapa marca os dois. */
 const TIPOS_TRECHO = ["voo", "transfer"];
-const STATUS_SELO = {
-  reservado: "Reservado",
-  pago: "Pago",
-  confirmado: "Confirmado"
-};
 // resumo da rota entre saida e chegada: distancia, tempo estimado e atalho para o Google Maps
 function ResumoRota({
   f
@@ -6747,25 +7052,6 @@ const SUGESTOES_LEVAR = {
   refeicao: ["Confirmar reserva"],
   escala: ["Power bank", "Cartao de embarque"]
 };
-const STATUS_EVENTO = [{
-  v: "previsto",
-  n: "Planejado"
-}, {
-  v: "reservado",
-  n: "Reservado"
-}, {
-  v: "pago",
-  n: "Pago"
-}, {
-  v: "confirmado",
-  n: "Confirmado"
-}, {
-  v: "concluido",
-  n: "Concluido"
-}, {
-  v: "cancelado",
-  n: "Cancelado"
-}];
 function Grupo({
   titulo,
   resumo,
@@ -6803,7 +7089,7 @@ function FormEvento({
 }) {
   const rascunho = useMemo(() => lerRascunho(evento.id), []);
   const looksIniciais = pessoal && pessoal.looks && pessoal.looks[evento.id] || {};
-  const [f, setF] = useState(() => Object.assign(ev(Object.assign({}, evento, rascunho || {})), {
+  const [f, setF] = useState(() => Object.assign(ev(migrarStatus(Object.assign({}, evento, rascunho || {}))), {
     _meus: rascunho && rascunho._meus || looksIniciais
   }));
   const [temRascunho, setTemRascunho] = useState(!!rascunho);
@@ -6925,7 +7211,7 @@ function FormEvento({
   };
   const sugestoes = (SUGESTOES_LEVAR[f.tipo] || []).filter(s => !lista.some(x => semAcento(x.t).toLowerCase() === semAcento(s).toLowerCase()));
   const looksPreenchidos = pessoal ? Object.values(f._meus || {}).filter(Boolean).length : 0;
-  const resumoReserva = [f.reserva && "Reserva " + f.reserva, f.custo && (f.moeda || "") + " " + f.custo + (f.status === "pago" ? " pago" : ""), f.contatoNome].filter(Boolean).join(" \u00B7 ");
+  const resumoReserva = [f.reserva && "Reserva " + f.reserva, f.custo && (f.moeda || "") + " " + f.custo + (f.pagamento === "pago" ? " pago" : f.pagamento === "parcial" ? " pago em parte" : ""), f.contatoNome].filter(Boolean).join(" \u00B7 ");
   const resumoLevar = [looksPreenchidos && "look", lista.length && lista.filter(x => x.ok).length + "/" + lista.length + " itens"].filter(Boolean).join(" \u00B7 ");
   const resumoAvancado = [(f.tzManual || f.tzFimManual ? "" : fusoAuto ? "auto " : "") + fusoNome(f.tz) + (tzF !== f.tz ? " \u2192 " + fusoNome(tzF) : ""), f.fundo && f.tipo !== "hotel" ? "nao bloqueia" : ""].filter(Boolean).join(" \u00B7 ");
   return /*#__PURE__*/React.createElement(Folha, {
@@ -7071,7 +7357,20 @@ function FormEvento({
       fontSize: "0.9231em",
       color: "var(--tinta3)"
     }
-  }, "Fuso de chegada ", fusoNome(tzF), ", ", tzF > f.tz ? "+" : "-", durTexto(Math.abs(tzF - f.tz)), " em relacao a saida")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, f.horaInicio, " ", "\u2192", " ", fimTxt), " ", "\u00B7", " ", durTexto(f.duracaoMin), pulaDia === 1 && " \u00B7 termina no dia seguinte", pulaDia > 1 && " \u00B7 termina " + fmtDataCurta(fim, tzF)))), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Fuso de chegada ", fusoNome(tzF), ", ", tzF > f.tz ? "+" : "-", durTexto(Math.abs(tzF - f.tz)), " em relacao a saida")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, f.horaInicio, " ", "\u2192", " ", fimTxt), " ", "\u00B7", " ", durTexto(f.duracaoMin), pulaDia === 1 && " \u00B7 termina no dia seguinte", pulaDia > 1 && " \u00B7 termina " + fmtDataCurta(fim, tzF)))), divergenciaDuracao(f) && /*#__PURE__*/React.createElement("div", {
+    className: "aviso",
+    style: {
+      marginBottom: 12,
+      borderColor: "var(--ambar)"
+    }
+  }, "A fonte informou ", /*#__PURE__*/React.createElement("b", null, durTexto(f.duracaoFonte)), ", mas pelos horarios locais (", f.horaInicio, " ", fusoNome(f.tz), " ", "\u2192", " ", fimTxt, " ", fusoNome(tzF), ") sao ", /*#__PURE__*/React.createElement("b", null, durTexto(f.duracaoMin)), ". Os horarios foram mantidos como vieram. Se a diferenca for de 1h, confira o fuso de chegada com a companhia.", /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    onClick: () => set("duracaoFonte", null)
+  }, "Conferido, manter ", durTexto(f.duracaoMin)))), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "conflito"
   }, "Esse horario se sobrepoe a: ", conflitos.map(c => c.titulo).join(", "), ". Da para salvar assim mesmo, mas confira."), agenda && f.tipo !== "hotel" && /*#__PURE__*/React.createElement(Grupo, {
     titulo: "Ver o dia",
@@ -7360,18 +7659,31 @@ function FormEvento({
     className: "sec"
   }, /*#__PURE__*/React.createElement("h2", null, "Status"), /*#__PURE__*/React.createElement("div", {
     className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
+  })), [["Andamento", "status", ANDAMENTO], ["Reserva", "reservaStatus", RESERVA_OPC], ["Pagamento", "pagamento", PAGAMENTO_OPC]].map(([rot, campo, opc]) => /*#__PURE__*/React.createElement("div", {
+    key: campo,
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rot-bloco",
+    style: {
+      marginBottom: 6
+    }
+  }, rot), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
-      gap: 6,
-      marginBottom: 18
+      gap: 6
     }
-  }, STATUS_EVENTO.map(s => /*#__PURE__*/React.createElement("button", {
-    key: s.v,
-    className: "pill" + (f.status === s.v ? " on" : ""),
-    onClick: () => set("status", s.v)
-  }, s.n))), /*#__PURE__*/React.createElement("button", {
+  }, opc.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.v || "ni",
+    className: "pill" + ((f[campo] || "") === s.v ? " on" : ""),
+    onClick: () => set(campo, s.v)
+  }, s.n))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 6
+    }
+  }), /*#__PURE__*/React.createElement("button", {
     className: "btn full",
     onClick: () => onSalvar(f)
   }, evento.titulo ? "Salvar" : "Adicionar ao roteiro"), evento.titulo && /*#__PURE__*/React.createElement("button", {
@@ -7572,7 +7884,9 @@ function DetalheEvento({
       marginTop: 6
     },
     onClick: () => acoes.look(e)
-  }, "Definir o look"))), (e.numeroVoo || e.terminal) && /*#__PURE__*/React.createElement(Linha, {
+  }, "Definir o look"))), /*#__PURE__*/React.createElement(Linha, {
+    k: "Status"
+  }, [(ANDAMENTO.find(x => x.v === e.status) || ANDAMENTO[0]).n, e.reservaStatus && (RESERVA_OPC.find(x => x.v === e.reservaStatus) || {}).n, e.pagamento && (PAGAMENTO_OPC.find(x => x.v === e.pagamento) || {}).n].filter(Boolean).join(" \u00B7 ")), (e.numeroVoo || e.terminal) && /*#__PURE__*/React.createElement(Linha, {
     k: "Voo"
   }, [e.numeroVoo, e.terminal && "Terminal " + e.terminal].filter(Boolean).join(" \u00B7 ")), (() => {
     const atual = dados.eventos.find(x => x.id === e.id) || e;
@@ -13214,6 +13528,41 @@ function App() {
     },
     abrirEvento: e => setDetalhe(e.id),
     editarEvento: e => setForm(ev(e)),
+    // cria o transfer que falta entre dois eventos, ja com saida, chegada, hora e duracao estimada
+    novoTransfer: c => {
+      const tzA = c.a.tzFim != null ? c.a.tzFim : c.a.tz;
+      const ini = fimAbs(c.a);
+      const data = new Date(ini + tzA * 60000).toISOString().slice(0, 10);
+      const pa = pontoFim(c.a),
+        pb = pontoIni(c.b);
+      setForm(ev({
+        id: "novo",
+        tipo: "transfer",
+        titulo: "Transfer " + (c.a.localFim || c.a.titulo) + " para " + (c.b.localInicio || c.b.localFim || c.b.titulo),
+        data: data,
+        dia: c.a.dia,
+        tz: tzA,
+        tzFim: null,
+        horaInicio: fmtHora(ini, tzA),
+        duracaoMin: c.min,
+        localInicio: c.a.localFim || c.a.titulo,
+        latIni: pa.lat,
+        lngIni: pa.lng,
+        localFim: c.b.localInicio || c.b.localFim || c.b.titulo,
+        lat: pb.lat,
+        lng: pb.lng,
+        cidade: c.b.cidade || c.a.cidade || ""
+      }));
+    },
+    ignorarConexao: chave => {
+      salvar(d => ({
+        ...d,
+        ignorados: Object.assign({}, d.ignorados, {
+          [chave]: true
+        })
+      }));
+      aviso("Esse aviso nao aparece mais", true);
+    },
     verNoMapa: item => {
       const e = dados.eventos.find(x => x.id === item.eventoId);
       // sem coordenada propria, centraliza no evento mais proximo no tempo que tenha ponto
