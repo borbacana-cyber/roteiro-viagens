@@ -1352,7 +1352,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 18:57"
+  versao: "2026-10-05 20:07"
 };
 
 /* ============================================================
@@ -1565,7 +1565,9 @@ function noiteDoDia(data, eventos) {
     hotel: hotel,
     cidade: hotel.cidade || ""
   };
-  const voo = ok.find(e => e.tipo === "voo" && e.data <= data && dataFimLocal(e) > data);
+  // em voo: o voo atravessa a meia-noite ou esta no ar na madrugada seguinte (01h as 05h)
+  const madrugada = Date.parse(data + "T00:00:00Z") + 86400000;
+  const voo = ok.find(e => e.tipo === "voo" && (e.data <= data && dataFimLocal(e) > data || e.horaInicio && inicioAbs(e) < madrugada + 5 * 3600000 - e.tz * 60000 && fimAbs(e) > madrugada + 3600000 - e.tz * 60000));
   if (voo) return {
     voo: voo,
     cidade: ""
@@ -1592,6 +1594,31 @@ function pendenciasDoEvento(e, doDia) {
     if (e.duracaoMin < t.min * 0.6) p.push("Duracao curta para o trajeto");
   }
   return p;
+}
+/* ---------- Localizar automaticamente (P1-6) ---------- */
+const precisaDePonto = e => !!e && !e.saidaDe && e.status !== "cancelado" && TIPOS_COM_LUGAR.indexOf(e.tipo) >= 0 && e.lat == null && e.latIni == null;
+// o que procurar: endereco, lugar de chegada, lugar, ou o titulo sem a palavra do tipo
+function nomeParaBusca(e, lado) {
+  if (lado === "saida") return (e.localInicio || "").trim();
+  const t = (e.endereco || e.localFim || e.localInicio || "").trim();
+  if (t) return t;
+  return String(e.titulo || "").replace(/^\s*(passeio( de barco)?|visita|tour|jantar|almoco|cafe da manha|check-?in|hospedagem|compras|show|festa)\s*(no|na|nos|nas|ao|a|as|aos|em|pelo|pela|do|da|de)?\s+/i, "").trim();
+}
+// decide sozinho so quando da para confiar; senao pede para a pessoa escolher
+function escolherLugar(lista) {
+  if (!lista || !lista.length) return null;
+  const perto = lista.filter(a => a.km == null || a.km <= 60);
+  if (perto.length === 1) return {
+    ponto: perto[0]
+  };
+  if (perto.length > 1) return {
+    opcoes: perto
+  };
+  return lista.length === 1 && lista[0].km == null ? {
+    ponto: lista[0]
+  } : {
+    opcoes: lista
+  };
 }
 function saidasDeHotel(eventos) {
   const lista = [];
@@ -2880,6 +2907,85 @@ function offsetDoFuso(nomeFuso, dataIso) {
     return null;
   }
 }
+/* ---------- Fuso automatico (P1-1) ----------
+   O fuso vem do lugar: coordenada do ponto (servico de clima devolve o fuso IANA)
+   ou, sem ponto, a cidade. Voo/transfer: saida define tz, chegada define tzFim.
+   Fuso escolhido a mao (tzManual / tzFimManual) nunca e sobrescrito. */
+const CACHE_FUSO = () => CONFIG.prefixo + "fusos_coord";
+async function fusoDaCoordenada(lat, lng) {
+  if (lat == null || lng == null) return null;
+  const k = (+lat).toFixed(2) + "," + (+lng).toFixed(2);
+  let c = {};
+  try {
+    c = JSON.parse(localStorage.getItem(CACHE_FUSO()) || "{}");
+  } catch (e) {}
+  if (c[k]) return c[k];
+  const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lng + "&timezone=auto&forecast_days=1&daily=sunrise");
+  const j = await r.json();
+  const nome = j && j.timezone && j.timezone !== "GMT" ? j.timezone : null;
+  if (nome) {
+    c[k] = nome;
+    try {
+      localStorage.setItem(CACHE_FUSO(), JSON.stringify(c));
+    } catch (e) {}
+  }
+  return nome;
+}
+const NOMES_FUSO = {
+  Rome: "Roma",
+  Muscat: "Mascate",
+  Lisbon: "Lisboa",
+  London: "Londres",
+  Istanbul: "Istambul",
+  New_York: "Nova York",
+  Tokyo: "Toquio",
+  Singapore: "Singapura",
+  Mexico_City: "Cidade do Mexico",
+  Buenos_Aires: "Buenos Aires",
+  Zurich: "Zurique",
+  Amsterdam: "Amsterda",
+  Berlin: "Berlim",
+  Athens: "Atenas",
+  Cairo: "Cairo",
+  Shanghai: "Xangai"
+};
+const cidadeDoFuso = n => {
+  if (!n) return "";
+  const c = String(n).split("/").pop();
+  return NOMES_FUSO[c] || c.replace(/_/g, " ");
+};
+// o que muda no evento quando os fusos dos lugares sao conhecidos
+function fusoParaEvento(f, nomeIni, nomeFim, manterFimLocal) {
+  const patch = {};
+  const dois = f.latIni != null || TIPOS_TRECHO.indexOf(f.tipo) >= 0;
+  const data = f.data || new Date().toISOString().slice(0, 10);
+  let tz = f.tz;
+  if (!f.tzManual) {
+    const n = dois ? nomeIni : nomeFim || nomeIni;
+    const o = n ? offsetDoFuso(n, data) : null;
+    if (o != null) tz = o;
+  }
+  let tzF = f.tzFim;
+  if (!f.tzFimManual) {
+    if (dois && nomeFim) {
+      const ini = f.horaInicio ? Date.parse(data + "T" + f.horaInicio + ":00Z") - tz * 60000 : null;
+      const dataFim = ini != null ? new Date(ini + (f.duracaoMin || 0) * 60000).toISOString().slice(0, 10) : data;
+      const o = offsetDoFuso(nomeFim, dataFim);
+      if (o != null) tzF = o === tz ? null : o;
+    } else if (!dois) tzF = null;
+  }
+  if (tz !== f.tz) patch.tz = tz;
+  if (tzF !== f.tzFim) patch.tzFim = tzF;
+  if (manterFimLocal && f.horaInicio && f.duracaoMin && ("tz" in patch || "tzFim" in patch)) {
+    // a hora de chegada digitada e local: mantem ela e ajusta a duracao
+    const antes = (f.tzFim != null ? f.tzFim : f.tz) - f.tz;
+    const depois = (tzF != null ? tzF : tz) - tz;
+    let d = f.duracaoMin + antes - depois;
+    while (d <= 0) d += 1440;
+    if (d !== f.duracaoMin) patch.duracaoMin = d;
+  }
+  return patch;
+}
 async function cidadeCompleta(nome) {
   const r = await geocodificar(nome);
   return r ? {
@@ -3393,6 +3499,8 @@ function ev(o) {
     lng: null,
     latIni: null,
     lngIni: null,
+    tzManual: false,
+    tzFimManual: false,
     obs: "",
     looks: {},
     status: "previsto",
@@ -5736,14 +5844,20 @@ function CabecalhoDia({
   const reais = d.itens.filter(e => !e.saidaDe && e.status !== "cancelado");
   const cidade = cidadeDoDia(d.itens);
   const comHora = reais.filter(e => !e.fundo && e.horaInicio && inicioAbs(e) != null);
-  const ini = comHora.length ? Math.min.apply(null, comHora.map(inicioAbs)) : null;
-  const fim = comHora.length ? Math.max.apply(null, comHora.map(fimAbs)) : null;
+  // a faixa usa o horario local de cada ponta, igual aos cartoes
+  const primeiro = comHora.slice().sort((a, b) => inicioAbs(a) - inicioAbs(b))[0];
+  const ultimo = comHora.slice().sort((a, b) => fimAbs(b) - fimAbs(a))[0];
+  const ini = primeiro ? inicioAbs(primeiro) : null;
+  const fim = ultimo ? fimAbs(ultimo) : null;
+  const tzIni = primeiro ? primeiro.tz : tzDia;
+  const tzFimDia = ultimo ? ultimo.tzFim != null ? ultimo.tzFim : ultimo.tz : tzDia;
   const desloc = reais.filter(e => !e.fundo && (e.tipo === "transfer" || e.tipo === "voo")).reduce((s, e) => s + (e.duracaoMin || 0), 0);
   const nPend = reais.reduce((s, e) => s + pendenciasDoEvento(e, reais).length, 0) + (trechosDia || 0);
   const partes = [reais.length ? reais.length + " evento" + (reais.length > 1 ? "s" : "") : "sem eventos"];
   if (ini != null) {
-    const pula = Math.floor((fim + tzDia * 60000) / 86400000) - Math.floor(Date.parse(d.data + "T00:00:00Z") / 86400000);
-    partes.push(fmtHora(ini, tzDia) + "\u2013" + (pula > 0 && fmtHora(fim, tzDia) === "00:00" && pula === 1 ? "24:00" : fmtHora(fim, tzDia) + (pula > 0 ? " +" + pula : "")));
+    const pula = Math.floor((fim + tzFimDia * 60000) / 86400000) - Math.floor(Date.parse(d.data + "T00:00:00Z") / 86400000);
+    const hf = fmtHora(fim, tzFimDia);
+    partes.push(fmtHora(ini, tzIni) + "\u2013" + (pula === 1 && hf === "00:00" ? "24:00" : hf + (pula > 0 ? " +" + pula : "")));
   }
   if (desloc) partes.push(durTexto(desloc) + " em deslocamento");
   return /*#__PURE__*/React.createElement("div", {
@@ -6760,11 +6874,44 @@ function FormEvento({
   const [maisTipos, setMaisTipos] = useState(() => TIPOS_FORM_EXTRA.indexOf(f.tipo) >= 0);
   const mudarFim = v => {
     if (!v || !f.horaInicio) return;
+    fimDigitado.current = true;
     let m = hm2min(v) - hm2min(f.horaInicio) - (tzF - f.tz);
     while (m <= 0) m += 1440;
     set("duracaoMin", durDias * 1440 + (m % 1440 || 1440));
   };
   const fimTxt = ini != null && f.duracaoMin ? fmtHora(fim, tzF) : "";
+  // fuso automatico: quando o lugar (ponto ou cidade) muda, o fuso acompanha
+  const fimDigitado = useRef(false);
+  const [fusoAuto, setFusoAuto] = useState(null);
+  const [refazerFuso, setRefazerFuso] = useState(0);
+  const ultimaChaveFuso = useRef(JSON.stringify([evento.latIni, evento.lngIni, evento.lat, evento.lng, evento.cidade]));
+  useEffect(() => {
+    const chave = JSON.stringify([f.latIni, f.lngIni, f.lat, f.lng, f.cidade]);
+    if (chave === ultimaChaveFuso.current && !refazerFuso) return;
+    ultimaChaveFuso.current = chave;
+    let vivo = true;
+    const t = setTimeout(async () => {
+      const nIni = f.latIni != null ? await fusoDaCoordenada(f.latIni, f.lngIni).catch(() => null) : null;
+      let nFim = f.lat != null ? await fusoDaCoordenada(f.lat, f.lng).catch(() => null) : null;
+      if (!nFim && f.cidade) {
+        const g = await geocodificar(f.cidade).catch(() => null);
+        nFim = g && g.fuso || null;
+      }
+      if (!vivo || !nIni && !nFim) return;
+      setFusoAuto({
+        ini: nIni,
+        fim: nFim
+      });
+      setF(p => Object.assign({}, p, fusoParaEvento(p, nIni, nFim, fimDigitado.current)));
+    }, 700);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+    };
+  }, [f.latIni, f.lngIni, f.lat, f.lng, f.cidade, refazerFuso]);
+  const trechoForm = f.latIni != null || TIPOS_TRECHO.indexOf(f.tipo) >= 0;
+  const nomeSaida = fusoAuto && fusoAuto.ini ? cidadeDoFuso(fusoAuto.ini) : "";
+  const nomeChegada = fusoAuto && fusoAuto.fim ? cidadeDoFuso(fusoAuto.fim) : "";
   const pulaDia = ini != null && f.duracaoMin ? Math.floor((fim + tzF * 60000) / 86400000) - Math.floor((ini + f.tz * 60000) / 86400000) : 0;
   const novoItem = useRef(null);
   const lista = f.checklist || [];
@@ -6780,7 +6927,7 @@ function FormEvento({
   const looksPreenchidos = pessoal ? Object.values(f._meus || {}).filter(Boolean).length : 0;
   const resumoReserva = [f.reserva && "Reserva " + f.reserva, f.custo && (f.moeda || "") + " " + f.custo + (f.status === "pago" ? " pago" : ""), f.contatoNome].filter(Boolean).join(" \u00B7 ");
   const resumoLevar = [looksPreenchidos && "look", lista.length && lista.filter(x => x.ok).length + "/" + lista.length + " itens"].filter(Boolean).join(" \u00B7 ");
-  const resumoAvancado = [fusoNome(f.tz) + (tzF !== f.tz ? " \u2192 " + fusoNome(tzF) : ""), f.fundo && f.tipo !== "hotel" ? "nao bloqueia" : ""].filter(Boolean).join(" \u00B7 ");
+  const resumoAvancado = [(f.tzManual || f.tzFimManual ? "" : fusoAuto ? "auto " : "") + fusoNome(f.tz) + (tzF !== f.tz ? " \u2192 " + fusoNome(tzF) : ""), f.fundo && f.tipo !== "hotel" ? "nao bloqueia" : ""].filter(Boolean).join(" \u00B7 ");
   return /*#__PURE__*/React.createElement(Folha, {
     titulo: evento.titulo ? "Editar" : "Adicionar ao roteiro",
     onFechar: onFechar,
@@ -6906,7 +7053,10 @@ function FormEvento({
   }, /*#__PURE__*/React.createElement("input", {
     type: "time",
     value: dur,
-    onChange: e => set("duracaoMin", durDias * 1440 + hm2min(e.target.value))
+    onChange: e => {
+      fimDigitado.current = false;
+      set("duracaoMin", durDias * 1440 + hm2min(e.target.value));
+    }
   })), /*#__PURE__*/React.createElement(Campo, {
     rot: "Fim"
   }, /*#__PURE__*/React.createElement("input", {
@@ -6916,7 +7066,12 @@ function FormEvento({
     disabled: !f.horaInicio
   }))), fimTxt && /*#__PURE__*/React.createElement("div", {
     className: "resumo-hora"
-  }, /*#__PURE__*/React.createElement("b", null, f.horaInicio, " ", "\u2192", " ", fimTxt), " ", "\u00B7", " ", durTexto(f.duracaoMin), pulaDia === 1 && " \u00B7 termina no dia seguinte", pulaDia > 1 && " \u00B7 termina " + fmtDataCurta(fim, tzF), f.tz !== tzF && " \u00B7 chega no horario de " + fusoNome(tzF) + " (" + (tzF > f.tz ? "+" : "-") + durTexto(Math.abs(tzF - f.tz)) + ")")), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, trechoForm && (f.tz !== tzF || pulaDia > 0) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Saida ", /*#__PURE__*/React.createElement("b", null, f.horaInicio), nomeSaida ? " (" + nomeSaida + ")" : "", " ", "\u00B7", " chegada ", /*#__PURE__*/React.createElement("b", null, fimTxt), nomeChegada ? " (" + nomeChegada + ")" : "", pulaDia > 0 ? " +" + pulaDia : "", " ", "\u00B7", " ", durTexto(f.duracaoMin), " de viagem", f.tz !== tzF && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.9231em",
+      color: "var(--tinta3)"
+    }
+  }, "Fuso de chegada ", fusoNome(tzF), ", ", tzF > f.tz ? "+" : "-", durTexto(Math.abs(tzF - f.tz)), " em relacao a saida")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, f.horaInicio, " ", "\u2192", " ", fimTxt), " ", "\u00B7", " ", durTexto(f.duracaoMin), pulaDia === 1 && " \u00B7 termina no dia seguinte", pulaDia > 1 && " \u00B7 termina " + fmtDataCurta(fim, tzF)))), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "conflito"
   }, "Esse horario se sobrepoe a: ", conflitos.map(c => c.titulo).join(", "), ". Da para salvar assim mesmo, mas confira."), agenda && f.tipo !== "hotel" && /*#__PURE__*/React.createElement(Grupo, {
     titulo: "Ver o dia",
@@ -6980,7 +7135,10 @@ function FormEvento({
     rot: "Fuso do inicio"
   }, /*#__PURE__*/React.createElement("select", {
     value: f.tz,
-    onChange: e => set("tz", +e.target.value)
+    onChange: e => setF(p => Object.assign({}, p, {
+      tz: +e.target.value,
+      tzManual: true
+    }))
   }, FUSOS.map(x => /*#__PURE__*/React.createElement("option", {
     key: x.n,
     value: x.v
@@ -6988,11 +7146,32 @@ function FormEvento({
     rot: "Fuso do fim"
   }, /*#__PURE__*/React.createElement("select", {
     value: tzF,
-    onChange: e => set("tzFim", +e.target.value)
+    onChange: e => setF(p => Object.assign({}, p, {
+      tzFim: +e.target.value,
+      tzFimManual: true
+    }))
   }, FUSOS.map(x => /*#__PURE__*/React.createElement("option", {
     key: x.n,
     value: x.v
   }, x.n))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.7188em",
+      color: "var(--tinta3)",
+      margin: "-4px 0 12px"
+    }
+  }, f.tzManual || f.tzFimManual ? /*#__PURE__*/React.createElement(React.Fragment, null, "Fuso escolhido a mao. ", /*#__PURE__*/React.createElement("button", {
+    className: "pend-link",
+    style: {
+      color: "var(--azul)"
+    },
+    onClick: () => {
+      setF(p => Object.assign({}, p, {
+        tzManual: false,
+        tzFimManual: false
+      }));
+      setRefazerFuso(x => x + 1);
+    }
+  }, "Voltar ao automatico")) : fusoAuto ? "Fuso automatico pelo lugar" + (nomeSaida && trechoForm ? ": saida " + nomeSaida : "") + (nomeChegada ? (trechoForm ? ", chegada " : ": ") + nomeChegada : "") + "." : "O fuso acompanha o lugar quando voce marca o ponto ou escreve a cidade."), /*#__PURE__*/React.createElement("div", {
     className: "item",
     style: {
       border: "1px solid var(--linha)",
@@ -8428,6 +8607,107 @@ function AbaMala({
 }
 
 /* ------------------ ABA MAPA E LOCALIZACAO ------------------ */
+// resultado do "Localizar automaticamente": quantos achou e o que precisa da pessoa
+function ResultadoLocalizar({
+  r,
+  dados,
+  onAbrir,
+  onFechar
+}) {
+  const abrir = id => {
+    const e = dados.eventos.find(x => x.id === id);
+    if (e) onAbrir(e);
+  };
+  return /*#__PURE__*/React.createElement(Folha, {
+    titulo: "Localizar automaticamente",
+    onFechar: onFechar
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card pad",
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700
+    }
+  }, r.achou, " de ", r.total, " locais agora estao no mapa"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)",
+      marginTop: 3
+    }
+  }, "So marquei sozinho quando havia um unico lugar com esse nome perto da cidade do evento.")), r.escolher.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Escolha o lugar certo"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, r.escolher.map(x => /*#__PURE__*/React.createElement("button", {
+    key: x.id,
+    className: "item",
+    style: {
+      width: "100%",
+      textAlign: "left"
+    },
+    onClick: () => abrir(x.id)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "mapa",
+    tam: 16
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, x.titulo), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)"
+    }
+  }, x.n, " lugares com o nome \"", x.texto, "\"")))))), r.semAchar.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Nao achei"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, r.semAchar.map(x => /*#__PURE__*/React.createElement("button", {
+    key: x.id,
+    className: "item",
+    style: {
+      width: "100%",
+      textAlign: "left"
+    },
+    onClick: () => abrir(x.id)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "aviso",
+    tam: 16
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, x.titulo), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)"
+    }
+  }, "Procurei por \"", x.texto, "\". Abra e escreva o nome ou o endereco.")))))), /*#__PURE__*/React.createElement("button", {
+    className: "btn full",
+    style: {
+      marginTop: 14
+    },
+    onClick: onFechar
+  }, "Fechar"));
+}
 function AbaMapa({
   dados,
   acoes,
@@ -8703,7 +8983,7 @@ function AbaMapa({
     id: "mapa",
     ref: ref
   }), (() => {
-    const semPonto = dados.eventos.filter(e => e.lat == null && ["voo", "escala", "livre", "descanso"].indexOf(e.tipo) < 0 && (e.endereco || e.localFim || e.cidade));
+    const semPonto = dados.eventos.filter(precisaDePonto);
     if (!semPonto.length) return null;
     return /*#__PURE__*/React.createElement("div", {
       className: "card pad",
@@ -8735,18 +9015,18 @@ function AbaMapa({
         fontWeight: 700,
         fontSize: "0.875em"
       }
-    }, semPonto.length, " eventos fora do mapa"), /*#__PURE__*/React.createElement("div", {
+    }, semPonto.length, semPonto.length > 1 ? " locais ainda sem posicao" : " local ainda sem posicao"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "0.75em",
         color: "var(--tinta2)"
       }
-    }, "Sem ponto marcado, eles nao aparecem aqui nem calculam a hora de sair"))), /*#__PURE__*/React.createElement("button", {
+    }, "Sem posicao eles nao aparecem aqui, nao calculam a hora de sair nem o deslocamento"))), /*#__PURE__*/React.createElement("button", {
       className: "btn full",
       style: {
         marginTop: 10
       },
       onClick: acoes.localizarTudo
-    }, "Procurar todos no mapa"));
+    }, "Localizar automaticamente"));
   })(), explorar && achados.length > 0 && (() => {
     const t = filtro.trim().toLowerCase();
     const lista = t ? achados.filter(x => x.nome.toLowerCase().indexOf(t) >= 0) : achados;
@@ -12960,38 +13240,57 @@ function App() {
       });
     },
     localizarTudo: async () => {
-      const alvo = dados.eventos.filter(e => e.lat == null && ["voo", "escala", "livre", "descanso"].indexOf(e.tipo) < 0 && (e.endereco || e.localFim || e.cidade));
-      if (!alvo.length) return aviso("Todos os eventos ja estao no mapa");
-      if (!confirm("Procurar no mapa " + alvo.length + " eventos sem ponto? Leva cerca de " + Math.ceil(alvo.length * 1.2) + " segundos.")) return;
-      setLocalizando({
+      const alvo = dados.eventos.filter(e => precisaDePonto(e) && (nomeParaBusca(e) || e.cidade));
+      if (!alvo.length) return aviso("Todos os locais ja estao no mapa");
+      if (!confirm("Procurar " + alvo.length + " locais sem posicao? Leva cerca de " + Math.ceil(alvo.length * 2) + " segundos.")) return;
+      const res = {
         total: alvo.length,
         feitos: 0,
-        achou: 0
-      });
+        achou: 0,
+        escolher: [],
+        semAchar: []
+      };
+      setLocalizando(Object.assign({}, res));
       const novos = {};
       for (let i = 0; i < alvo.length; i++) {
         const e = alvo[i];
-        const busca = [e.endereco, e.localFim, e.cidade].filter(Boolean).join(", ");
-        const g = await geocodificarEndereco(busca).catch(() => null);
-        if (g) novos[e.id] = g;
-        setLocalizando({
-          total: alvo.length,
-          feitos: i + 1,
-          achou: Object.keys(novos).length
+        const texto = nomeParaBusca(e) || e.cidade;
+        const l = await buscarLugares(texto, e.cidade).catch(() => []);
+        const r = escolherLugar(l);
+        if (r && r.ponto) {
+          novos[e.id] = {
+            lat: r.ponto.lat,
+            lng: r.ponto.lng
+          };
+          if (e.tipo === "transfer" && nomeParaBusca(e, "saida")) {
+            const s = escolherLugar(await buscarLugares(nomeParaBusca(e, "saida"), e.cidade).catch(() => []));
+            if (s && s.ponto) Object.assign(novos[e.id], {
+              latIni: s.ponto.lat,
+              lngIni: s.ponto.lng
+            });
+          }
+          res.achou++;
+        } else if (r && r.opcoes) res.escolher.push({
+          id: e.id,
+          titulo: e.titulo,
+          texto: texto,
+          n: r.opcoes.length
+        });else res.semAchar.push({
+          id: e.id,
+          titulo: e.titulo,
+          texto: texto
         });
+        res.feitos = i + 1;
+        setLocalizando(Object.assign({}, res));
         await new Promise(r => setTimeout(r, 1100));
       }
-      setLocalizando(null);
-      const n = Object.keys(novos).length;
-      if (!n) return aviso("Nao consegui achar nenhum. Confira o endereco e a cidade.");
-      salvar(d => ({
+      if (Object.keys(novos).length) salvar(d => ({
         ...d,
-        eventos: d.eventos.map(e => novos[e.id] ? Object.assign({}, e, {
-          lat: novos[e.id].lat,
-          lng: novos[e.id].lng
-        }) : e)
+        eventos: d.eventos.map(e => novos[e.id] ? Object.assign({}, e, novos[e.id]) : e)
       }));
-      aviso(n + " de " + alvo.length + " eventos agora aparecem no mapa", true);
+      setLocalizando(Object.assign({}, res, {
+        fim: true
+      }));
     },
     novoDoMapa: x => {
       const ord = dados.eventos.slice().sort(porDataHora);
@@ -13785,7 +14084,7 @@ function App() {
     pessoal: pessoal,
     aviso: aviso,
     onFechar: () => setPublicar(false)
-  }), localizando && /*#__PURE__*/React.createElement("div", {
+  }), localizando && !localizando.fim && /*#__PURE__*/React.createElement("div", {
     className: "folha"
   }, /*#__PURE__*/React.createElement("div", {
     className: "in",
@@ -13795,7 +14094,15 @@ function App() {
   }, /*#__PURE__*/React.createElement(Carregando, {
     passo: "Procurando " + localizando.feitos + " de " + localizando.total,
     dica: localizando.achou + " encontrados ate agora"
-  }))), verDadosViagem && /*#__PURE__*/React.createElement(FolhaDadosViagem, {
+  }))), localizando && localizando.fim && /*#__PURE__*/React.createElement(ResultadoLocalizar, {
+    r: localizando,
+    dados: dados,
+    onAbrir: e => {
+      setLocalizando(null);
+      acoes.editarEvento(e);
+    },
+    onFechar: () => setLocalizando(null)
+  }), verDadosViagem && /*#__PURE__*/React.createElement(FolhaDadosViagem, {
     dados: dados,
     salvar: salvar,
     acoes: acoes,
