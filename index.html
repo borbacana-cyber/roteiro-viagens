@@ -809,6 +809,10 @@ a{color:var(--azul)}
 .ev.feito{opacity:.62}
 .ev .hh{font-family:'Space Mono',monospace;font-size:0.8125em;font-weight:700;width:52px;flex:0 0 52px;padding-top:1px;line-height:1.25}
 .ev .hh small{display:block;font-size:0.5938em;color:var(--tinta3);font-weight:400}
+.ev .hh .rot{display:block;font-family:"Avenir Next",Avenir,Inter,sans-serif;font-size:0.5625em;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--tinta3);line-height:1.2;margin-bottom:1px}
+.ev .hh .rot.fim{margin-top:6px}
+.ev .hh .hf{font-weight:400;color:var(--tinta2)}
+.ev .ds{font-size:0.75em;color:var(--tinta2);margin-top:5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ev .co{flex:1;min-width:0}
 .ev .tt{font-weight:600;font-size:0.9062em;line-height:1.25}
 .ev .st{font-size:0.75em;color:var(--tinta2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1319,7 +1323,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 14:37"
+  versao: "2026-10-05 15:17"
 };
 
 /* ============================================================
@@ -5285,6 +5289,30 @@ function VisorFoto({
     onClick: () => onRemover(foto)
   }, "Remover")));
 }
+// Coluna de horario do cartao: inicio, fim (com +1 dia, data ou fuso quando muda) e duracao
+function horarioDoCartao(e, i, f, tz, tzCasa) {
+  const hotel = e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440;
+  const tzF = tzCasa != null ? tzCasa : e.tzFim != null ? e.tzFim : tz;
+  const r = {
+    rotIni: e.saidaDe ? "saida" : hotel ? "entrada" : "inicio",
+    rotFim: hotel ? "saida" : "fim",
+    tzF: tzF,
+    temFim: !e.saidaDe && i != null && (e.duracaoMin || 0) > 0,
+    extra: "",
+    dur: ""
+  };
+  if (!r.temFim) return r;
+  const dia = (abs, z) => Math.floor((abs + (z || 0) * 60000) / 86400000);
+  const pula = dia(f, tzF) - dia(i, tz);
+  r.fimTxt = fmtHora(f, tzF);
+  // terminar a meia-noite e fim do proprio dia, nao do seguinte
+  if (!hotel && pula === 1 && r.fimTxt === "00:00") r.fimTxt = "24:00";else if (hotel || pula > 1) r.extra = fmtDataCurta(f, tzF);else if (pula === 1) r.extra = "dia seguinte";
+  if (tzCasa == null && e.tzFim != null && e.tzFim !== tz) r.extra = (r.extra ? r.extra + " " : "") + "UTC" + sigla(tzF);
+  const n = Math.round((Date.parse(fmtIsoNoFuso(f, tzF) + "T00:00:00Z") - Date.parse(fmtIsoNoFuso(i, tz) + "T00:00:00Z")) / 86400000);
+  r.dur = hotel ? n + (n === 1 ? " noite" : " noites") : durTexto(e.duracaoMin);
+  return r;
+}
+const fmtIsoNoFuso = (abs, tz) => new Date(abs + (tz || 0) * 60000).toISOString().slice(0, 10);
 function ItemEvento({
   e,
   agora,
@@ -5304,6 +5332,7 @@ function ItemEvento({
   const t = TIPOS[e.tipo] || TIPOS.livre;
   const sub = [e.localInicio, e.localFim].filter(Boolean).join(" \u2192 ") || e.cidade || "";
   const [aberto, setAberto] = useState(false);
+  const h = horarioDoCartao(e, i, f, tz, modoRelogio === "casa" ? dtz : null);
   return /*#__PURE__*/React.createElement("div", {
     className: "ev" + (emCurso ? " agora" : "") + (feito && !emCurso ? " feito" : ""),
     style: {
@@ -5332,24 +5361,24 @@ function ItemEvento({
     onClick: onClick
   }, /*#__PURE__*/React.createElement("div", {
     className: "hh"
-  }, fmtHora(i, tz), /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "block",
-      fontSize: "0.6875em",
-      fontWeight: 400,
-      color: "var(--tinta3)",
-      letterSpacing: "-.02em"
-    }
-  }, e.saidaDe ? "saida" : "\u2192 " + fmtHora(f, e.tzFim != null ? modoRelogio === "casa" ? dtz : e.tzFim : tz)), /*#__PURE__*/React.createElement("small", null, e.saidaDe ? "" : e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440 ? Math.round((e.duracaoMin || 0) / 1440) + "n" : durTexto(e.duracaoMin))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "rot"
+  }, h.rotIni), fmtHora(i, tz), h.temFim && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    className: "rot fim"
+  }, h.rotFim), /*#__PURE__*/React.createElement("span", {
+    className: "hf"
+  }, h.fimTxt), h.extra && /*#__PURE__*/React.createElement("small", null, h.extra))), /*#__PURE__*/React.createElement("div", {
     className: "co"
   }, /*#__PURE__*/React.createElement("div", {
     className: "tt"
   }, /*#__PURE__*/React.createElement(Ico, {
     n: t.k,
     tam: 16
-  }), " ", e.titulo), sub && /*#__PURE__*/React.createElement("div", {
+  }), " ", e.titulo), (h.dur || sub) && /*#__PURE__*/React.createElement("div", {
     className: "st"
-  }, sub), (e.fundo || e.saidaDe) && /*#__PURE__*/React.createElement("span", {
+  }, [h.dur, sub].filter(Boolean).join(" \u00B7 ")), e.obs && !e.saidaDe && /*#__PURE__*/React.createElement("div", {
+    className: "ds"
+  }, e.obs), (e.fundo || e.saidaDe) && /*#__PURE__*/React.createElement("span", {
     className: "tag",
     style: {
       color: "var(--azul)",
