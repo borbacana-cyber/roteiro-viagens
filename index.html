@@ -1319,7 +1319,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 13:56"
+  versao: "2026-10-05 14:37"
 };
 
 /* ============================================================
@@ -1700,6 +1700,13 @@ try {
   if (CONFIG.firebase && CONFIG.firebase.apiKey) {
     fb = firebase.apps.length ? firebase.app() : firebase.initializeApp(CONFIG.firebase);
     dbf = firebase.firestore();
+    // campo undefined derrubava a gravacao inteira em silencio
+    try {
+      dbf.settings({
+        ignoreUndefinedProperties: true,
+        merge: true
+      });
+    } catch (e) {}
     try {
       fbAuth = firebase.auth();
     } catch (e) {}
@@ -1831,6 +1838,42 @@ function novoPessoal(nome, pessoas, editor, mala) {
     atualizadoEm: Date.now()
   };
 }
+/* estado da sincronizacao com a nuvem: base = versao da nuvem que este aparelho
+   ja conhece; pendente = tem alteracao local que ainda nao subiu */
+const SYNC = {
+  estado: "",
+  ultimo: 0,
+  erro: "",
+  ouvintes: new Set()
+};
+function syncAvisar(estado, erro) {
+  SYNC.estado = estado;
+  if (estado === "ok") SYNC.ultimo = Date.now();
+  SYNC.erro = erro || "";
+  SYNC.ouvintes.forEach(f => {
+    try {
+      f(Object.assign({}, SYNC));
+    } catch (e) {}
+  });
+}
+const Sync = {
+  base() {
+    return +localStorage.getItem(CHAVE() + "_base") || 0;
+  },
+  setBase(n) {
+    try {
+      localStorage.setItem(CHAVE() + "_base", String(n || 0));
+    } catch (e) {}
+  },
+  pendente() {
+    return localStorage.getItem(CHAVE() + "_pendente") === "1";
+  },
+  setPendente(v) {
+    try {
+      if (v) localStorage.setItem(CHAVE() + "_pendente", "1");else localStorage.removeItem(CHAVE() + "_pendente");
+    } catch (e) {}
+  }
+};
 const Nuvem = {
   ref() {
     return dbf.collection(CONFIG.prefixo + "viagens").doc(VIAGEM_ATUAL);
@@ -1881,11 +1924,33 @@ const Nuvem = {
   refPos() {
     return dbf.collection(CONFIG.prefixo + "posicoes").doc(VIAGEM_ATUAL);
   },
+  // grava so se ninguem mexeu na nuvem desde a ultima versao que este aparelho conhece.
+  // Se outro aparelho gravou antes, devolve erro com a versao dele (e.conflito).
   async gravar(d) {
-    await this.ref().set(Object.assign({}, d, {
-      _origem: clienteId,
-      atualizadoEm: Date.now()
-    }));
+    const limpo = JSON.parse(JSON.stringify(d));
+    limpo._origem = clienteId;
+    limpo.atualizadoEm = d.atualizadoEm || Date.now();
+    const ref = this.ref();
+    const base = Sync.base();
+    Sync.setPendente(true);
+    try {
+      await dbf.runTransaction(async t => {
+        const s = await t.get(ref);
+        const r = s.exists ? s.data() : null;
+        if (r && r._origem !== clienteId && (r.atualizadoEm || 0) > base) {
+          const e = new Error("conflito");
+          e.conflito = r;
+          throw e;
+        }
+        t.set(ref, limpo);
+      });
+    } catch (e) {
+      if (!(e && e.conflito)) syncAvisar("pendente", e && e.message || "");
+      throw e;
+    }
+    Sync.setBase(limpo.atualizadoEm);
+    Sync.setPendente(false);
+    syncAvisar("ok");
   },
   ouvir(cb) {
     return this.ref().onSnapshot(s => {
@@ -5385,6 +5450,34 @@ function ItemEvento({
   }, "Excluir")));
 }
 
+/* Rodape de Preferencias: mostra se esta viagem esta subindo para a nuvem e o
+   codigo dela. Dois aparelhos so sincronizam se o codigo for o mesmo. */
+function EstadoNuvem() {
+  const [s, setS] = useState(Object.assign({}, SYNC));
+  const [, tique] = useState(0);
+  useEffect(() => {
+    SYNC.ouvintes.add(setS);
+    const t = setInterval(() => tique(x => x + 1), 30000);
+    return () => {
+      SYNC.ouvintes.delete(setS);
+      clearInterval(t);
+    };
+  }, []);
+  const pend = NUVEM && (s.estado === "pendente" || Sync.pendente());
+  const texto = !NUVEM ? "sem nuvem neste aparelho" : pend ? "alteracao aguardando conexao" : s.ultimo ? "sincronizado " + new Date(s.ultimo).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }) : "conectando a nuvem";
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: "0.6875em",
+      color: pend ? "var(--ambar)" : "var(--tinta3)",
+      textAlign: "center"
+    }
+  }, texto, " \u00B7 viagem ", String(VIAGEM_ATUAL || "").slice(-6).toUpperCase());
+}
+
 /* ------------------ ABA ROTEIRO ------------------ */
 function AbaRoteiro({
   dados,
@@ -8191,7 +8284,7 @@ function AbaAjustes({
       fontSize: "0.6875em",
       color: "var(--tinta3)"
     }
-  }, "versao ", CONFIG.versao)), /*#__PURE__*/React.createElement("div", {
+  }, "versao ", CONFIG.versao), /*#__PURE__*/React.createElement(EstadoNuvem, null)), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 30
     }
@@ -11594,19 +11687,86 @@ function App() {
       rastreando: false
     })));
   }, [ui]);
+  // Sincronizacao. Toda versao que chega da nuvem passa por aqui: na abertura,
+  // pelo ouvinte ao vivo, ao voltar para o app e quando a internet volta.
+  const enviar = d => {
+    if (!NUVEM || !d) return;
+    Nuvem.gravar(d).catch(e => {
+      if (e && e.conflito) receberRemoto(e.conflito);
+    });
+  };
+  const receberRemoto = r => {
+    if (!r) return;
+    const atual = dadosRef.current || dados;
+    const base = Sync.base();
+    const remAt = r.atualizadoEm || 0;
+    const locAt = atual && atual.atualizadoEm || 0;
+    if (remAt === locAt) {
+      Sync.setBase(remAt);
+      Sync.setPendente(false);
+      syncAvisar("ok");
+      return;
+    }
+    // sem base gravada (versao antiga do app): vale o mais recente
+    const novidadeRemota = base ? remAt > base : remAt > locAt;
+    const tenhoPendente = base ? Sync.pendente() && locAt > base : locAt > remAt;
+    if (!novidadeRemota) {
+      if (tenhoPendente) {
+        // a nuvem esta na versao que este aparelho ja conhece: pode subir por cima
+        if (!base) Sync.setBase(remAt);
+        enviar(atual);
+      } else syncAvisar("ok");
+      return;
+    }
+    const d = normalizar(r);
+    if (tenhoPendente && atual && (atual.eventos || []).length) {
+      // os dois aparelhos mexeram: fica a versao da nuvem, a daqui vai para o Desfazer
+      historico.current.push({
+        d: atual,
+        p: pessoalRef.current
+      });
+      try {
+        localStorage.setItem(CHAVE() + "_antes_sync", JSON.stringify(atual));
+      } catch (e) {}
+      aviso("Este roteiro mudou em outro aparelho. Atualizei para a versao mais nova", true);
+    }
+    setDados(d);
+    Local.gravar(d);
+    Sync.setBase(remAt);
+    Sync.setPendente(false);
+    syncAvisar("ok");
+  };
+  const conferirNuvem = () => Nuvem.ref().get().then(s => {
+    if (s.exists) receberRemoto(s.data());else if (Sync.pendente() || (dadosRef.current || dados).atualizadoEm) enviar(dadosRef.current || dados);
+  });
   useEffect(() => {
     if (!NUVEM) return;
-    Nuvem.ref().get().then(s => {
-      if (s.exists) {
-        const d = normalizar(s.data());
-        if ((d.atualizadoEm || 0) > (dados.atualizadoEm || 0)) setDados(d);
-      }
-    }).catch(() => {}).then(() => setProntoNuvem(true));
-    const un = Nuvem.ouvir(d => setDados(normalizar(d)));
+    conferirNuvem().catch(e => syncAvisar("pendente", e && e.message || "")).then(() => setProntoNuvem(true));
+    const un = Nuvem.ouvir(receberRemoto);
     const un2 = Nuvem.ouvirPosicao(setPosFamilia);
+    const voltar = () => {
+      if (document.visibilityState === "visible") conferirNuvem().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", voltar);
+    window.addEventListener("online", voltar);
+    window.addEventListener("focus", voltar);
+    const tenta = setInterval(() => {
+      if (Sync.pendente()) conferirNuvem().catch(() => {});
+    }, 60000);
+    let antes = "";
+    const ouvinte = s => {
+      if (s.estado === "pendente" && antes !== "pendente") aviso("Sem conexao com a nuvem. A alteracao ficou guardada aqui e sobe sozinha");
+      antes = s.estado;
+    };
+    SYNC.ouvintes.add(ouvinte);
     return () => {
+      clearInterval(tenta);
+      SYNC.ouvintes.delete(ouvinte);
       un && un();
       un2 && un2();
+      document.removeEventListener("visibilitychange", voltar);
+      window.removeEventListener("online", voltar);
+      window.removeEventListener("focus", voltar);
     };
   }, []);
   const salvarPessoal = useCallback(fn => {
@@ -11665,10 +11825,11 @@ function App() {
       });
       if (historico.current.length > 12) historico.current.shift();
       const novo = typeof fn === "function" ? fn(prev) : fn;
-      novo.atualizadoEm = Date.now();
+      // sempre maior que a versao anterior, mesmo com o relogio do aparelho atrasado
+      novo.atualizadoEm = Math.max(Date.now(), (prev && prev.atualizadoEm || 0) + 1, Sync.base() + 1);
       Local.gravar(novo);
       registrarViagem(novo.viagem);
-      if (NUVEM) Nuvem.gravar(novo).catch(e => console.warn(e));
+      enviar(novo);
       return novo;
     });
   }, []);
@@ -11696,9 +11857,12 @@ function App() {
       setToast(null);
       return aviso("Nada para desfazer");
     }
-    setDados(h.d);
-    Local.gravar(h.d);
-    if (NUVEM) Nuvem.gravar(h.d).catch(() => {});
+    const volta = Object.assign({}, h.d, {
+      atualizadoEm: Math.max(Date.now(), (dadosRef.current && dadosRef.current.atualizadoEm || 0) + 1, Sync.base() + 1)
+    });
+    setDados(volta);
+    Local.gravar(volta);
+    enviar(volta);
     if (h.p) {
       setPessoal(h.p);
       Local.gravarPessoal(h.p);
