@@ -1319,7 +1319,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 13:40"
+  versao: "2026-10-05 13:56"
 };
 
 /* ============================================================
@@ -1503,6 +1503,45 @@ function numeroDoDia(data, viagem, primeiraData) {
   return n > 0 ? n : 1;
 }
 const porDataHora = (a, b) => (a.data || "").localeCompare(b.data || "") || (a.horaInicio || "").localeCompare(b.horaInicio || "");
+// Check-out automatico: cada hospedagem que atravessa a noite ganha uma linha de saida
+// no dia em que termina. Nao e salva: nasce do proprio evento do hotel, entao editar
+// a data de check-out no hotel move a saida junto. Se ja existe um check-out lancado
+// na mao naquele dia, ele vale e o automatico nao aparece.
+const RE_SAIDA = /check ?-? ?out|checkout|sa[i\u00ed]da do hotel/i;
+function saidasDeHotel(eventos) {
+  const lista = [];
+  (eventos || []).forEach(e => {
+    if (e.tipo !== "hotel" || !e.data || !e.horaInicio || e.status === "cancelado") return;
+    if (RE_SAIDA.test(e.titulo || "")) return;
+    const fim = Date.parse(e.data + "T" + e.horaInicio + ":00Z") + (e.duracaoMin || 0) * 60000;
+    if (isNaN(fim)) return;
+    const data = new Date(fim).toISOString().slice(0, 10);
+    if (data <= e.data) return;
+    if (eventos.some(x => x.id !== e.id && x.data === data && RE_SAIDA.test(x.titulo || ""))) return;
+    const nome = (e.titulo || "").replace(/^\s*check ?-? ?in\s*(no|na|do|da|em|[-:\u2013\u00B7])?\s*/i, "").trim() || e.titulo || "Hotel";
+    lista.push({
+      id: e.id + ":saida",
+      saidaDe: e.id,
+      tipo: "hotel",
+      titulo: "Check-out \u00B7 " + nome,
+      data: data,
+      horaInicio: new Date(fim).toISOString().slice(11, 16),
+      duracaoMin: 0,
+      tz: e.tz,
+      tzFim: null,
+      dia: (e.dia || 0) + Math.round((Date.parse(data + "T00:00:00Z") - Date.parse(e.data + "T00:00:00Z")) / 86400000),
+      cidade: e.cidade || "",
+      localInicio: e.localInicio || "",
+      localFim: "",
+      obs: "",
+      custo: "",
+      reserva: "",
+      fundo: false,
+      status: e.status === "concluido" ? "concluido" : ""
+    });
+  });
+  return lista;
+}
 const numDia = n => (n || 0) + 1;
 function paraNumero(t) {
   t = String(t == null ? "" : t).replace(/[^\d.,-]/g, "");
@@ -1959,7 +1998,7 @@ async function abrirDoc(d, aviso) {
   if (d.url) window.open(d.url, "_blank");else aviso("Este documento nao esta salvo neste aparelho");
 }
 const tamDoc = n => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
-const iconeDoc = t => /pdf/i.test(t) ? "\uD83D\uDCC4" : /image/i.test(t) ? "\uD83D\uDDBC\uFE0F" : "\uD83D\uDCCE";
+const iconeDoc = t => /image/i.test(t) ? "camera" : "documento";
 async function enviarFoto(file) {
   const blob = await comprimir(file);
   if (!blob) return null;
@@ -3953,6 +3992,8 @@ const CAMINHOS = {
   lapis: "M4 20l1-4.5L16.5 4a1.8 1.8 0 012.5 0l1 1a1.8 1.8 0 010 2.5L8.5 19 4 20zM15 5.5l3.5 3.5",
   livro: "M4 4.5h6a2.5 2.5 0 012 1 2.5 2.5 0 012-1h6v14h-6a2.5 2.5 0 00-2 1 2.5 2.5 0 00-2-1H4v-14zM12 5.5v14",
   colar: "M8 3.5h8a1 1 0 011 1V6M6.5 6h11a1 1 0 011 1v13a1 1 0 01-1 1h-11a1 1 0 01-1-1V7a1 1 0 011-1zM9 11h6M9 15h4",
+  novo: "M12 5v14M5 12h14",
+  link: "M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1",
   mais2: "M12 5v14M5 12h14",
   bandeirinha: "M4 21V4a1 1 0 011-1h13l-3 4.5L18 12H5",
   troca: "M4 8h13l-3-3M20 16H7l3 3"
@@ -4542,7 +4583,10 @@ function AbaAgora({
     style: {
       fontSize: "1.375em"
     }
-  }, "\uD83E\uDDF3"), /*#__PURE__*/React.createElement("div", {
+  }, React.createElement(Ico, {
+    n: "mala",
+    tam: 22
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -4698,7 +4742,10 @@ function AbaAgora({
     style: {
       fontSize: "1.375em"
     }
-  }, "\uD83C\uDFE8"), /*#__PURE__*/React.createElement("span", {
+  }, React.createElement(Ico, {
+    n: "hotel",
+    tam: 22
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1,
       minWidth: 0
@@ -4883,7 +4930,10 @@ function CartaoTrajeto({
     style: {
       fontSize: "1.5em"
     }
-  }, t.modo === "a pe" ? "\uD83D\uDEB6" : "\uD83D\uDE95"), /*#__PURE__*/React.createElement("div", {
+  }, React.createElement(Ico, {
+    n: t.modo === "a pe" ? "pessoa" : "transfer",
+    tam: 24
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -5033,7 +5083,10 @@ function ListaDocs({
     style: {
       fontSize: "1.188em"
     }
-  }, iconeDoc(d.tipo)), /*#__PURE__*/React.createElement("div", {
+  }, React.createElement(Ico, {
+    n: iconeDoc(d.tipo),
+    tam: 19
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -5222,7 +5275,7 @@ function ItemEvento({
       color: "var(--tinta3)",
       letterSpacing: "-.02em"
     }
-  }, "\u2192 " + fmtHora(f, e.tzFim != null ? modoRelogio === "casa" ? dtz : e.tzFim : tz)), /*#__PURE__*/React.createElement("small", null, e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440 ? Math.round((e.duracaoMin || 0) / 1440) + "n" : durTexto(e.duracaoMin))), /*#__PURE__*/React.createElement("div", {
+  }, e.saidaDe ? "saida" : "\u2192 " + fmtHora(f, e.tzFim != null ? modoRelogio === "casa" ? dtz : e.tzFim : tz)), /*#__PURE__*/React.createElement("small", null, e.saidaDe ? "" : e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440 ? Math.round((e.duracaoMin || 0) / 1440) + "n" : durTexto(e.duracaoMin))), /*#__PURE__*/React.createElement("div", {
     className: "co"
   }, /*#__PURE__*/React.createElement("div", {
     className: "tt"
@@ -5231,13 +5284,13 @@ function ItemEvento({
     tam: 16
   }), " ", e.titulo), sub && /*#__PURE__*/React.createElement("div", {
     className: "st"
-  }, sub), e.fundo && /*#__PURE__*/React.createElement("span", {
+  }, sub), (e.fundo || e.saidaDe) && /*#__PURE__*/React.createElement("span", {
     className: "tag",
     style: {
       color: "var(--azul)",
       borderColor: "var(--azul)"
     }
-  }, "Periodo"), e.reserva && /*#__PURE__*/React.createElement("span", {
+  }, e.saidaDe ? "Check-out" : e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440 ? "Check-in" : "Periodo"), e.reserva && /*#__PURE__*/React.createElement("span", {
     className: "tag"
   }, "Reserva ", e.reserva), alerta && /*#__PURE__*/React.createElement("span", {
     className: "tag",
@@ -5317,7 +5370,7 @@ function ItemEvento({
       setAberto(false);
       onEditar && onEditar(e);
     }
-  }, "Editar"), /*#__PURE__*/React.createElement("button", {
+  }, e.saidaDe ? "Editar hospedagem" : "Editar"), onExcluir && /*#__PURE__*/React.createElement("button", {
     className: "btn sec",
     style: {
       flex: 1,
@@ -5349,12 +5402,16 @@ function AbaRoteiro({
       const k = e.data || "";
       (m[k] = m[k] || []).push(e);
     });
+    const primeira = Object.keys(m).sort()[0] || "";
+    // check-out automatico entra depois de fixar o primeiro dia, para nao mexer na numeracao
+    saidasDeHotel(ordenados).forEach(e => {
+      (m[e.data] = m[e.data] || []).push(e);
+    });
     const chaves = Object.keys(m).sort();
-    const primeira = chaves[0] || "";
     return chaves.map(k => ({
       dia: numeroDoDia(k, dados.viagem, primeira) - 1,
       data: k,
-      itens: m[k]
+      itens: m[k].slice().sort(porDataHora)
     }));
   }, [ordenados, dados.viagem.inicio]);
   const filtrados = dias.map(d => ({
@@ -5397,7 +5454,7 @@ function AbaRoteiro({
     }
     return lista;
   }, [ordenados]);
-  const eventosVisiveis = visiveis.reduce((l, d) => l.concat(d.itens), []);
+  const eventosVisiveis = visiveis.reduce((l, d) => l.concat(d.itens), []).filter(e => !e.saidaDe);
   const custos = somarCustos(eventosVisiveis);
   const temCusto = Object.keys(custos).length > 0;
   const rotuloCusto = ui.visao === "dia" ? "no dia" : ui.visao === "semana" ? "na semana" : "na viagem";
@@ -5506,7 +5563,10 @@ function AbaRoteiro({
     className: "card pad vazio"
   }, /*#__PURE__*/React.createElement("span", {
     className: "ic"
-  }, "\uD83D\uDCC5"), dados.eventos.length === 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, React.createElement(Ico, {
+    n: "roteiro",
+    tam: 32
+  })), dados.eventos.length === 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       marginBottom: 4,
@@ -5532,7 +5592,10 @@ function AbaRoteiro({
   }), " Planejar com IA"), /*#__PURE__*/React.createElement("button", {
     className: "btn sec",
     onClick: acoes.colar
-  }, "\uD83D\uDCCB", " Colar um roteiro"))) : "Nada aqui com esse filtro."), trechos.some(t => t.nivel !== "coberto" || !(t.ev && t.ev.reserva)) && ui.visao === "tudo" && /*#__PURE__*/React.createElement("div", {
+  }, React.createElement(Ico, {
+    n: "colar",
+    tam: 15
+  }), " Colar um roteiro"))) : "Nada aqui com esse filtro."), trechos.some(t => t.nivel !== "coberto" || !(t.ev && t.ev.reserva)) && ui.visao === "tudo" && /*#__PURE__*/React.createElement("div", {
     className: "aviso",
     style: {
       marginBottom: 10
@@ -5557,8 +5620,9 @@ function AbaRoteiro({
     className: "meta"
   }, (() => {
     const ag = agendaDoDia(dados.eventos, d.data, fusoDoDia(d.itens, d.data, dados.eventos), null);
-    const cd = somarCustos(d.itens);
-    const partes = [d.itens.length + " evento" + (d.itens.length > 1 ? "s" : "")];
+    const reais = d.itens.filter(e => !e.saidaDe);
+    const cd = somarCustos(reais);
+    const partes = reais.length ? [reais.length + " evento" + (reais.length > 1 ? "s" : "")] : [];
     if (ag && ag.totalLivre > 0) partes.push(durVaga(ag.totalLivre / 60000) + " livre");
     if (Object.keys(cd).length) partes.push(textoCustos(cd));
     return partes.join(" \u00B7 ");
@@ -5657,18 +5721,33 @@ function AbaRoteiro({
       fontSize: "0.8125em"
     },
     onClick: () => acoes.novoTrecho(t)
-  }, "Lancar")))), d.itens.map(e => /*#__PURE__*/React.createElement(ItemEvento, {
-    key: e.id,
-    e: e,
-    agora: agora,
-    onClick: () => acoes.abrirEvento(e),
-    modoRelogio: ui.modoRelogio,
-    dtz: dtz,
-    onEditar: acoes.editarEvento,
-    onExcluir: acoes.excluirEvento,
-    alerta: trechos.find(t => t.ev && t.ev.id === e.id),
-    onResolver: acoes.editarEvento
-  })), /*#__PURE__*/React.createElement("button", {
+  }, "Lancar")))), d.itens.map(e => {
+    if (e.saidaDe) {
+      const hotel = dados.eventos.find(x => x.id === e.saidaDe);
+      return /*#__PURE__*/React.createElement(ItemEvento, {
+        key: e.id,
+        e: e,
+        agora: agora,
+        onClick: () => hotel && acoes.abrirEvento(hotel),
+        modoRelogio: ui.modoRelogio,
+        dtz: dtz,
+        onEditar: () => hotel && acoes.editarEvento(hotel),
+        onExcluir: null
+      });
+    }
+    return /*#__PURE__*/React.createElement(ItemEvento, {
+      key: e.id,
+      e: e,
+      agora: agora,
+      onClick: () => acoes.abrirEvento(e),
+      modoRelogio: ui.modoRelogio,
+      dtz: dtz,
+      onEditar: acoes.editarEvento,
+      onExcluir: acoes.excluirEvento,
+      alerta: trechos.find(t => t.ev && t.ev.id === e.id),
+      onResolver: acoes.editarEvento
+    });
+  }), /*#__PURE__*/React.createElement("button", {
     className: "btn sec full",
     style: {
       marginTop: 4,
@@ -5801,10 +5880,18 @@ function FormEvento({
     value: f.tipo,
     onChange: e => {
       const t = e.target.value;
-      setF(p => Object.assign({}, p, {
-        tipo: t,
-        fundo: t === "hotel" ? true : p.tipo === "hotel" ? false : p.fundo
-      }));
+      setF(p => {
+        const n = Object.assign({}, p, {
+          tipo: t,
+          fundo: t === "hotel" ? true : p.tipo === "hotel" ? false : p.fundo
+        });
+        if (t === "hotel" && (p.duracaoMin || 0) < 1440) {
+          n.horaInicio = p.horaInicio || "14:00";
+          const [hh, mm] = n.horaInicio.split(":").map(Number);
+          n.duracaoMin = 1440 - (hh * 60 + (mm || 0)) + 720;
+        }
+        return n;
+      });
     }
   }, Object.keys(TIPOS).map(k => /*#__PURE__*/React.createElement("option", {
     key: k,
@@ -8624,7 +8711,10 @@ function VisaoLoja() {
     className: "vazio"
   }, /*#__PURE__*/React.createElement("span", {
     className: "ic"
-  }, "\uD83D\uDDFA\uFE0F"), erro));
+  }, React.createElement(Ico, {
+    n: "mapa",
+    tam: 32
+  })), erro));
   if (!v) return /*#__PURE__*/React.createElement("div", {
     className: "wrap"
   }, /*#__PURE__*/React.createElement("div", {
@@ -10417,7 +10507,10 @@ function VisaoPrimeiroAcesso() {
       width: 30,
       textAlign: "center"
     }
-  }, "\u2795"), /*#__PURE__*/React.createElement("span", {
+  }, React.createElement(Ico, {
+    n: "novo",
+    tam: 20
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1
     }
@@ -10449,7 +10542,10 @@ function VisaoPrimeiroAcesso() {
       width: 30,
       textAlign: "center"
     }
-  }, "\uD83D\uDD17"), /*#__PURE__*/React.createElement("span", {
+  }, React.createElement(Ico, {
+    n: "link",
+    tam: 20
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1
     }
@@ -10481,7 +10577,10 @@ function VisaoPrimeiroAcesso() {
       width: 30,
       textAlign: "center"
     }
-  }, "\uD83D\uDD11"), /*#__PURE__*/React.createElement("span", {
+  }, React.createElement(Ico, {
+    n: "chave",
+    tam: 20
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1
     }
