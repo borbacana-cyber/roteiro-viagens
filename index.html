@@ -892,6 +892,25 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
   font-size:11px;font-weight:700;color:#fff;background:var(--ambar);border:2px solid #fff;border-radius:99px;
   min-width:24px;height:24px;padding:0 5px;box-shadow:0 2px 6px rgba(13,13,13,.35)}
 .pin-dia.visitado{background:var(--jade)}
+.grupo{border:1px solid var(--linha);border-radius:12px;background:var(--cartao);margin-bottom:10px}
+.grupo-cab{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;background:none;border:0;text-align:left;font-weight:600;font-size:0.875em;color:var(--tinta)}
+.grupo-cab .t{flex:0 0 auto}
+.grupo-cab .r{flex:1;min-width:0;text-align:right;font-weight:400;font-size:0.8571em;color:var(--tinta2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grupo-cab .s{font-family:'Space Mono',monospace;color:var(--tinta3);padding-left:4px}
+.grupo-corpo{padding:0 14px 4px}
+.tipos{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tipos::-webkit-scrollbar{display:none}
+.lado2,.lado3{display:grid;gap:8px}
+.lado2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.lado3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.lado2 input,.lado3 input{min-width:0;width:100%}
+.resumo-hora{font-size:0.8125em;color:var(--tinta2);margin:-4px 0 12px;line-height:1.45}
+.resumo-hora b{font-family:'Space Mono',monospace;color:var(--tinta)}
+.pin-dia.saida{background:var(--cartao);color:var(--tinta);border-color:var(--ambar)}
+.rot-bloco{font-family:"Avenir Next",Avenir,Inter,sans-serif;font-size:0.6875em;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--tinta2)}
+.pinto{display:inline-flex;align-items:center;gap:4px;font-family:'Space Mono',monospace;font-size:0.6875em}
+.pinto.sim{color:var(--jade)}
+.pinto.nao{color:var(--ambar)}
 .pin-dia.familia{background:var(--carimbo);min-width:16px;height:16px}
 .pin-lugar{width:14px;height:14px;border-radius:99px;background:var(--cartao);border:3px solid var(--azul);box-shadow:0 1px 4px rgba(13,13,13,.3)}
 .pin-lugar.visto{background:var(--azul);border-color:var(--cartao);opacity:.6}
@@ -1323,7 +1342,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 18:05"
+  versao: "2026-10-05 18:36"
 };
 
 /* ============================================================
@@ -2302,7 +2321,7 @@ function coordsDoTexto(t) {
   };
 }
 async function buscarNominatim(q) {
-  const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=pt-BR&q=" + encodeURIComponent(q));
+  const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&accept-language=pt-BR&q=" + encodeURIComponent(q));
   const j = await r.json();
   return (j || []).map(x => {
     const partes = String(x.display_name || "").split(",").map(s => s.trim());
@@ -2310,7 +2329,8 @@ async function buscarNominatim(q) {
       lat: parseFloat(x.lat),
       lng: parseFloat(x.lon),
       nome: x.name || partes[0] || q,
-      detalhe: partes.slice(x.name ? 1 : 1, 4).filter(p => p && p !== x.name).join(", ")
+      detalhe: partes.slice(1, 4).filter(p => p && p !== x.name).join(", "),
+      cidade: (a => a.city || a.town || a.village || a.municipality || "")(x.address || {})
     };
   });
 }
@@ -2325,7 +2345,8 @@ async function buscarPhoton(q, perto) {
       lat: f.geometry.coordinates[1],
       lng: f.geometry.coordinates[0],
       nome: p.name || [p.street, p.housenumber].filter(Boolean).join(" ") || q,
-      detalhe: [p.city || p.county, p.state, p.country].filter(Boolean).join(", ")
+      detalhe: [p.city || p.county, p.state, p.country].filter(Boolean).join(", "),
+      cidade: p.city || ""
     };
   });
 }
@@ -3308,13 +3329,18 @@ function ev(o) {
     moeda: "BRL",
     lat: null,
     lng: null,
+    latIni: null,
+    lngIni: null,
     obs: "",
     looks: {},
     status: "previsto",
     checkin: null,
     nota: "",
     fundo: false,
-    docs: []
+    docs: [],
+    checklist: [],
+    numeroVoo: "",
+    terminal: ""
   }, o);
 }
 const SEMENTE = {
@@ -5054,14 +5080,22 @@ function CartaoTrajeto({
   posicao,
   agora
 }) {
-  if (!evento || !posicao || evento.lat == null) return null;
-  const km = distanciaKm(posicao.lat, posicao.lng, evento.lat, evento.lng);
+  if (!evento || !posicao) return null;
+  const alvo = evento.latIni != null ? {
+    lat: evento.latIni,
+    lng: evento.lngIni
+  } : evento.lat != null ? {
+    lat: evento.lat,
+    lng: evento.lng
+  } : null;
+  if (!alvo) return null;
+  const km = distanciaKm(posicao.lat, posicao.lng, alvo.lat, alvo.lng);
   if (!isFinite(km)) return null;
   const t = estimarTrajeto(km);
   const ini = inicioAbs(evento);
   const sair = ini - t.min * 60000;
   const atrasado = sair < agora;
-  const url = "https://www.google.com/maps/dir/?api=1&origin=" + posicao.lat + "," + posicao.lng + "&destination=" + evento.lat + "," + evento.lng;
+  const url = "https://www.google.com/maps/dir/?api=1&origin=" + posicao.lat + "," + posicao.lng + "&destination=" + alvo.lat + "," + alvo.lng;
   return /*#__PURE__*/React.createElement("div", {
     className: "card pad",
     style: {
@@ -5464,7 +5498,13 @@ function ItemEvento({
     }
   }, e.saidaDe ? "Check-out" : e.tipo === "hotel" && (e.duracaoMin || 0) >= 1440 ? "Check-in" : "Periodo"), e.reserva && /*#__PURE__*/React.createElement("span", {
     className: "tag"
-  }, "Reserva ", e.reserva), alerta && /*#__PURE__*/React.createElement("span", {
+  }, "Reserva ", e.reserva), STATUS_SELO[e.status] && /*#__PURE__*/React.createElement("span", {
+    className: "tag",
+    style: {
+      color: "var(--jade)",
+      borderColor: "var(--jade)"
+    }
+  }, STATUS_SELO[e.status]), alerta && /*#__PURE__*/React.createElement("span", {
     className: "tag",
     style: {
       color: "var(--ambar)",
@@ -5728,7 +5768,7 @@ function AbaRoteiro({
       padding: "11px 12px"
     },
     onClick: acoes.adicionar
-  }, "+ Evento"), /*#__PURE__*/React.createElement("button", {
+  }, "+ Adicionar"), /*#__PURE__*/React.createElement("button", {
     className: "btn sec",
     style: {
       flex: 1,
@@ -5816,7 +5856,7 @@ function AbaRoteiro({
     },
     title: "Novo evento neste dia",
     onClick: () => acoes.adicionar(d)
-  }, "+ Evento"), /*#__PURE__*/React.createElement("span", {
+  }, "+ Adicionar"), /*#__PURE__*/React.createElement("span", {
     className: "meta"
   }, (() => {
     const ag = agendaDoDia(dados.eventos, d.data, fusoDoDia(d.itens, d.data, dados.eventos), null);
@@ -5956,7 +5996,7 @@ function AbaRoteiro({
       color: "var(--tinta2)"
     },
     onClick: () => acoes.adicionar(d)
-  }, "+ Evento no dia ", numDia(d.dia)))), /*#__PURE__*/React.createElement("div", {
+  }, "+ Adicionar ao dia ", numDia(d.dia)))), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 30
     }
@@ -5973,6 +6013,485 @@ function lerRascunho(id) {
     return null;
   }
 }
+/* ------------------ ONDE: saida e chegada do evento ------------------
+   lat/lng = onde o evento acontece ou chega. latIni/lngIni = de onde sai,
+   quando e diferente. A hora de sair mira o ponto de saida; o mapa marca os dois. */
+const TIPOS_TRECHO = ["voo", "transfer"];
+const STATUS_SELO = {
+  reservado: "Reservado",
+  pago: "Pago",
+  confirmado: "Confirmado"
+};
+// resumo da rota entre saida e chegada: distancia, tempo estimado e atalho para o Google Maps
+function ResumoRota({
+  f
+}) {
+  if (f.latIni == null || f.lat == null) return null;
+  const km = distanciaKm(f.latIni, f.lngIni, f.lat, f.lng);
+  const voo = f.tipo === "voo";
+  const t = voo ? null : estimarTrajeto(km);
+  const url = "https://www.google.com/maps/dir/?api=1&origin=" + f.latIni + "," + f.lngIni + "&destination=" + f.lat + "," + f.lng + (voo ? "" : "&travelmode=driving");
+  const min = t && t.min;
+  const tempo = min ? min >= 60 ? Math.floor(min / 60) + "h" + (min % 60 ? " " + min % 60 + "min" : "") : min + " min" : "";
+  const curto = !voo && min && f.duracaoMin && f.duracaoMin < min * 0.6;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card pad",
+    style: {
+      marginBottom: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: voo ? "voo" : "transfer",
+    tam: 18
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, voo ? Math.round(km).toLocaleString("pt-BR") + " km em linha reta" : "~" + (t.km < 10 ? t.km.toFixed(1) : Math.round(t.km)) + " km " + t.modo + " \u00B7 ~" + tempo), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.7188em",
+      color: curto ? "var(--ambar)" : "var(--tinta3)"
+    }
+  }, curto ? "A duracao lancada parece curta para esse trajeto" : voo ? "Distancia entre os aeroportos" : "Estimativa sem transito")), /*#__PURE__*/React.createElement("a", {
+    className: "btn sec",
+    style: {
+      flex: "0 0 auto",
+      fontSize: "0.8125em",
+      padding: "8px 12px",
+      textDecoration: "none"
+    },
+    href: url,
+    target: "_blank",
+    rel: "noopener"
+  }, "Abrir rota"));
+}
+function BlocoLugar({
+  rotulo,
+  dica,
+  nome,
+  onNome,
+  ponto,
+  onPonto,
+  cidade,
+  onCidade,
+  aviso,
+  placeholder,
+  endereco,
+  onEndereco
+}) {
+  const [buscando, setBuscando] = useState(false);
+  const [opcoes, setOpcoes] = useState(null);
+  const tem = ponto.lat != null;
+  const marcar = (lat, lng, o) => {
+    setOpcoes(null);
+    onPonto(lat, lng);
+    if (o && o.cidade && onCidade) onCidade(o.cidade);
+  };
+  const achar = async () => {
+    const c = coordsDoTexto(nome) || coordsDoTexto(endereco);
+    if (c) return marcar(c.lat, c.lng);
+    const texto = (endereco || "").trim() || (nome || "").trim();
+    if (!texto) return aviso && aviso("Escreva o nome do lugar primeiro");
+    setBuscando(true);
+    setOpcoes(null);
+    const l = await buscarLugares(texto, cidade).catch(() => []);
+    setBuscando(false);
+    if (l.length === 1) marcar(l[0].lat, l[0].lng, l[0]);else if (l.length) setOpcoes(l);else if (aviso) aviso("Nao achei. Tente so o nome do lugar, ou cole as coordenadas do Google Maps");
+  };
+  const enter = e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      achar();
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card pad",
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "rot-bloco"
+  }, rotulo), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "pinto " + (tem ? "sim" : "nao")
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: tem ? "check" : "aviso",
+    tam: 13
+  }), tem ? "no mapa" : "sem ponto")), dica && !tem && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)",
+      marginBottom: 8,
+      lineHeight: 1.4
+    }
+  }, dica), /*#__PURE__*/React.createElement("input", {
+    value: nome,
+    onChange: e => onNome(e.target.value),
+    onKeyDown: enter,
+    enterKeyHint: "search",
+    placeholder: placeholder
+  }), onEndereco && /*#__PURE__*/React.createElement("input", {
+    style: {
+      marginTop: 8
+    },
+    value: endereco,
+    onChange: e => onEndereco(e.target.value),
+    onKeyDown: enter,
+    enterKeyHint: "search",
+    placeholder: "Endereco (opcional, ajuda a achar no mapa)"
+  }), !tem && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      flex: 1
+    },
+    disabled: buscando,
+    onClick: achar
+  }, buscando ? "Procurando..." : "Achar no mapa"), /*#__PURE__*/React.createElement("button", {
+    className: "btn sec",
+    style: {
+      flex: 1
+    },
+    onClick: () => {
+      if (!navigator.geolocation) return aviso && aviso("Sem GPS neste aparelho");
+      navigator.geolocation.getCurrentPosition(p => marcar(p.coords.latitude, p.coords.longitude), () => aviso && aviso("Nao consegui acessar o GPS"), {
+        timeout: 8000
+      });
+    }
+  }, "Estou aqui agora")), opcoes && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: "0.6875em",
+      color: "var(--tinta3)",
+      marginBottom: 6,
+      textTransform: "uppercase",
+      letterSpacing: ".08em"
+    }
+  }, "Qual destes?"), opcoes.map((o, i) => /*#__PURE__*/React.createElement("button", {
+    key: i,
+    className: "item",
+    style: {
+      width: "100%",
+      textAlign: "left",
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 6
+    },
+    onClick: () => marcar(o.lat, o.lng, o)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "mapa",
+    tam: 16
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, o.nome), o.detalhe && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, o.detalhe)), o.km != null && /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: "0.6875em",
+      color: "var(--tinta3)"
+    }
+  }, o.km < 10 ? o.km.toFixed(1) : Math.round(o.km), " km"))), /*#__PURE__*/React.createElement("button", {
+    className: "btn sec full",
+    style: {
+      fontSize: "0.8125em"
+    },
+    onClick: () => setOpcoes(null)
+  }, "Nenhum destes")), tem && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: "0.6875em",
+      color: "var(--tinta3)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, ponto.lat.toFixed(4), ", ", ponto.lng.toFixed(4)), /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    disabled: buscando,
+    onClick: achar
+  }, buscando ? "Procurando..." : "Procurar de novo"), /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    onClick: () => onPonto(null, null)
+  }, "Apagar")));
+}
+function SecaoOnde({
+  f,
+  setF,
+  aviso
+}) {
+  const trecho = TIPOS_TRECHO.indexOf(f.tipo) >= 0;
+  const [dois, setDois] = useState(() => !!f.localFim || f.latIni != null);
+  const doisLugares = trecho || dois;
+  const set = o => setF(p => Object.assign({}, p, o));
+  const cidadeSeVazia = c => setF(p => p.cidade ? p : Object.assign({}, p, {
+    cidade: c
+  }));
+  const separar = () => {
+    // o lugar que ja estava preenchido e onde o passeio acontece: vira a chegada
+    setF(p => Object.assign({}, p, p.localFim ? {} : {
+      localFim: p.localInicio,
+      localInicio: ""
+    }));
+    setDois(true);
+  };
+  const juntar = () => {
+    setF(p => Object.assign({}, p, {
+      localInicio: p.localFim || p.localInicio,
+      localFim: "",
+      lat: p.lat != null ? p.lat : p.latIni,
+      lng: p.lat != null ? p.lng : p.lngIni,
+      latIni: null,
+      lngIni: null
+    }));
+    setDois(false);
+  };
+  const exSaida = f.tipo === "voo" ? "Ex: Aeroporto de Guarulhos" : f.tipo === "transfer" ? "Ex: Casa, ou Hotel Kata Rocks" : "Ex: Hotel Kata Rocks (busca no hotel)";
+  const exChegada = f.tipo === "voo" ? "Ex: Aeroporto de Bangkok" : f.tipo === "transfer" ? "Ex: Aeroporto de Guarulhos" : "Ex: Ilhas Similan";
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Onde"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), doisLugares ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(BlocoLugar, {
+    rotulo: "Saida",
+    dica: "De onde voce sai. E para ca que o app calcula a hora de sair.",
+    nome: f.localInicio,
+    onNome: v => set({
+      localInicio: v
+    }),
+    ponto: {
+      lat: f.latIni,
+      lng: f.lngIni
+    },
+    onPonto: (a, b) => set({
+      latIni: a,
+      lngIni: b
+    }),
+    cidade: f.cidade,
+    aviso: aviso,
+    placeholder: exSaida
+  }), /*#__PURE__*/React.createElement(BlocoLugar, {
+    rotulo: "Chegada",
+    dica: "Onde voce termina. O proximo evento parte daqui.",
+    nome: f.localFim,
+    onNome: v => set({
+      localFim: v
+    }),
+    ponto: {
+      lat: f.lat,
+      lng: f.lng
+    },
+    onPonto: (a, b) => set({
+      lat: a,
+      lng: b
+    }),
+    cidade: f.cidade,
+    onCidade: cidadeSeVazia,
+    aviso: aviso,
+    placeholder: exChegada
+  }), /*#__PURE__*/React.createElement(ResumoRota, {
+    f: f
+  }), !trecho && /*#__PURE__*/React.createElement("button", {
+    className: "btn sec full",
+    style: {
+      fontSize: "0.8125em",
+      marginBottom: 12
+    },
+    onClick: juntar
+  }, "Comeca e termina no mesmo lugar")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(BlocoLugar, {
+    rotulo: "Onde acontece",
+    nome: f.localInicio,
+    onNome: v => set({
+      localInicio: v
+    }),
+    endereco: f.endereco,
+    onEndereco: v => set({
+      endereco: v
+    }),
+    ponto: {
+      lat: f.lat,
+      lng: f.lng
+    },
+    onPonto: (a, b) => set({
+      lat: a,
+      lng: b
+    }),
+    cidade: f.cidade,
+    onCidade: cidadeSeVazia,
+    aviso: aviso,
+    placeholder: "Ex: Wat Arun, Restaurante Sorn"
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn sec full",
+    style: {
+      fontSize: "0.8125em",
+      marginBottom: 12
+    },
+    onClick: separar
+  }, "Sai de um lugar e termina em outro")), /*#__PURE__*/React.createElement(Campo, {
+    rot: "Cidade"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.cidade,
+    onChange: e => set({
+      cidade: e.target.value
+    }),
+    placeholder: "Para o clima e para agrupar no mapa"
+  })), /*#__PURE__*/React.createElement("details", {
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      fontSize: "0.7812em",
+      color: "var(--tinta2)",
+      cursor: "pointer"
+    }
+  }, "Tenho um link do Google Maps"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.mapsUrl,
+    onChange: e => {
+      const v = e.target.value;
+      const c = coordsDoTexto(v);
+      setF(p => Object.assign({}, p, {
+        mapsUrl: v
+      }, c && p.lat == null ? {
+        lat: c.lat,
+        lng: c.lng
+      } : {}));
+      if (c && f.lat == null && aviso) aviso(doisLugares ? "Chegada marcada pelo link" : "Ponto marcado pelo link");
+    },
+    placeholder: "Cole o link aqui"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "aviso",
+    style: {
+      marginTop: 8
+    }
+  }, "Se o link completo tiver as coordenadas, marca ", doisLugares ? "a chegada" : "o ponto", " sozinho. Link curto (maps.app.goo.gl) nao traz: no Google Maps segure o dedo sobre o lugar, copie os numeros que aparecem (ex: -23.4356, -46.4731) e cole no campo do lugar acima."))));
+}
+// Formulario do evento: tipos em ordem de uso, nomes amigaveis e o que sugerir levar
+const TIPOS_FORM = ["voo", "transfer", "hotel", "passeio", "refeicao", "evento", "livre"];
+const TIPOS_FORM_EXTRA = ["escala", "compras", "praia", "descanso"];
+const ROTULO_FORM = {
+  hotel: "Hospedagem",
+  refeicao: "Restaurante",
+  livre: "Tempo livre"
+};
+const EX_TITULO = {
+  voo: "Ex: Sao Paulo para Bangkok",
+  transfer: "Ex: Transfer Sorocaba para Guarulhos",
+  hotel: "Ex: Hotel Kata Rocks",
+  passeio: "Ex: Passeio Ilhas Similan",
+  refeicao: "Ex: Jantar no Sorn",
+  livre: "Ex: Tarde livre na praia",
+  escala: "Ex: Escala em Doha"
+};
+const SUGESTOES_LEVAR = {
+  voo: ["Passaporte", "Cartao de embarque", "Power bank", "Adaptador de tomada"],
+  transfer: ["Voucher do transfer", "Confirmar motorista"],
+  hotel: ["Voucher da reserva", "Passaporte"],
+  passeio: ["Protetor solar", "Dinheiro trocado", "Roupa de banho"],
+  praia: ["Protetor solar", "Toalha", "Roupa de banho"],
+  refeicao: ["Confirmar reserva"],
+  escala: ["Power bank", "Cartao de embarque"]
+};
+const STATUS_EVENTO = [{
+  v: "previsto",
+  n: "Planejado"
+}, {
+  v: "reservado",
+  n: "Reservado"
+}, {
+  v: "pago",
+  n: "Pago"
+}, {
+  v: "confirmado",
+  n: "Confirmado"
+}, {
+  v: "concluido",
+  n: "Concluido"
+}, {
+  v: "cancelado",
+  n: "Cancelado"
+}];
+function Grupo({
+  titulo,
+  resumo,
+  icone,
+  aberto,
+  children
+}) {
+  const [ab, setAb] = useState(!!aberto);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grupo" + (ab ? " on" : "")
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "grupo-cab",
+    onClick: () => setAb(!ab)
+  }, icone && /*#__PURE__*/React.createElement(Ico, {
+    n: icone,
+    tam: 16
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "t"
+  }, titulo), /*#__PURE__*/React.createElement("span", {
+    className: "r"
+  }, !ab && resumo ? resumo : ""), /*#__PURE__*/React.createElement("span", {
+    className: "s"
+  }, ab ? "\u2212" : "+")), ab && /*#__PURE__*/React.createElement("div", {
+    className: "grupo-corpo"
+  }, children));
+}
 function FormEvento({
   evento,
   dados,
@@ -5988,26 +6507,6 @@ function FormEvento({
     _meus: rascunho && rascunho._meus || looksIniciais
   }));
   const [temRascunho, setTemRascunho] = useState(!!rascunho);
-  const [buscandoGeo, setBuscandoGeo] = useState(false);
-  const [opcoesGeo, setOpcoesGeo] = useState(null);
-  const marcarPonto = (lat, lng) => {
-    setOpcoesGeo(null);
-    setF(p => Object.assign({}, p, {
-      lat: lat,
-      lng: lng
-    }));
-  };
-  const acharNoMapa = async () => {
-    const c = coordsDoTexto(f.endereco) || coordsDoTexto(f.mapsUrl);
-    if (c) return marcarPonto(c.lat, c.lng);
-    const texto = (f.endereco || "").trim() || f.localFim || f.localInicio || f.cidade || "";
-    if (!texto) return aviso ? aviso("Escreva o nome do lugar ou o endereco primeiro") : null;
-    setBuscandoGeo(true);
-    setOpcoesGeo(null);
-    const l = await buscarLugares(texto, f.cidade).catch(() => []);
-    setBuscandoGeo(false);
-    if (l.length === 1) marcarPonto(l[0].lat, l[0].lng);else if (l.length) setOpcoesGeo(l);else if (aviso) aviso("Nao achei. Tente so o nome do lugar, ou cole as coordenadas do Google Maps");
-  };
   const set = (k, v) => setF(p => Object.assign({}, p, {
     [k]: v
   }));
@@ -6060,8 +6559,44 @@ function FormEvento({
       if (n >= 0 && n !== f.dia) set("dia", n);
     }
   }, [f.data]);
+  const mudarTipo = t => setF(p => {
+    const n = Object.assign({}, p, {
+      tipo: t,
+      fundo: t === "hotel" ? true : p.tipo === "hotel" ? false : p.fundo
+    });
+    if (t === "hotel" && (p.duracaoMin || 0) < 1440) {
+      n.horaInicio = p.horaInicio || "14:00";
+      const [hh, mm] = n.horaInicio.split(":").map(Number);
+      n.duracaoMin = 1440 - (hh * 60 + (mm || 0)) + 720;
+    }
+    return n;
+  });
+  const [maisTipos, setMaisTipos] = useState(() => TIPOS_FORM_EXTRA.indexOf(f.tipo) >= 0);
+  const mudarFim = v => {
+    if (!v || !f.horaInicio) return;
+    let m = hm2min(v) - hm2min(f.horaInicio) - (tzF - f.tz);
+    while (m <= 0) m += 1440;
+    set("duracaoMin", durDias * 1440 + (m % 1440 || 1440));
+  };
+  const fimTxt = ini != null && f.duracaoMin ? fmtHora(fim, tzF) : "";
+  const pulaDia = ini != null && f.duracaoMin ? Math.floor((fim + tzF * 60000) / 86400000) - Math.floor((ini + f.tz * 60000) / 86400000) : 0;
+  const novoItem = useRef(null);
+  const lista = f.checklist || [];
+  const addItem = t => {
+    t = String(t || "").trim();
+    if (!t) return;
+    set("checklist", lista.concat([{
+      t: t,
+      ok: false
+    }]));
+  };
+  const sugestoes = (SUGESTOES_LEVAR[f.tipo] || []).filter(s => !lista.some(x => semAcento(x.t).toLowerCase() === semAcento(s).toLowerCase()));
+  const looksPreenchidos = pessoal ? Object.values(f._meus || {}).filter(Boolean).length : 0;
+  const resumoReserva = [f.reserva && "Reserva " + f.reserva, f.custo && (f.moeda || "") + " " + f.custo, f.contatoNome].filter(Boolean).join(" \u00B7 ");
+  const resumoLevar = [looksPreenchidos && "look", lista.length && lista.filter(x => x.ok).length + "/" + lista.length + " itens"].filter(Boolean).join(" \u00B7 ");
+  const resumoAvancado = [fusoNome(f.tz) + (tzF !== f.tz ? " \u2192 " + fusoNome(tzF) : ""), f.fundo && f.tipo !== "hotel" ? "nao bloqueia" : ""].filter(Boolean).join(" \u00B7 ");
   return /*#__PURE__*/React.createElement(Folha, {
-    titulo: evento.titulo ? "Editar evento" : "Novo evento",
+    titulo: evento.titulo ? "Editar" : "Adicionar ao roteiro",
     onFechar: onFechar,
     protegido: true,
     avisoSaida: "Sair sem salvar? O que voce digitou fica guardado como rascunho.",
@@ -6084,63 +6619,74 @@ function FormEvento({
   }, "Recuperei o que voce estava digitando antes de sair."), /*#__PURE__*/React.createElement("button", {
     className: "pill",
     onClick: descartar
-  }, "Descartar")), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Titulo do evento"
+  }, "Descartar")), /*#__PURE__*/React.createElement("div", {
+    className: "tipos"
+  }, TIPOS_FORM.concat(maisTipos ? TIPOS_FORM_EXTRA : []).map(k => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    className: "pill" + (f.tipo === k ? " on" : ""),
+    onClick: () => mudarTipo(k)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: TIPOS[k].k,
+    tam: 14
+  }), ROTULO_FORM[k] || TIPOS[k].n)), !maisTipos && /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    onClick: () => setMaisTipos(true)
+  }, "Outro")), /*#__PURE__*/React.createElement(Campo, {
+    rot: "Titulo"
   }, /*#__PURE__*/React.createElement("input", {
     value: f.titulo,
     onChange: e => set("titulo", e.target.value),
-    placeholder: "Ex: Templo Wat Arun",
-    autoFocus: true
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "grid2"
-  }, /*#__PURE__*/React.createElement(Campo, {
-    rot: "Tipo"
-  }, /*#__PURE__*/React.createElement("select", {
-    value: f.tipo,
-    onChange: e => {
-      const t = e.target.value;
-      setF(p => {
-        const n = Object.assign({}, p, {
-          tipo: t,
-          fundo: t === "hotel" ? true : p.tipo === "hotel" ? false : p.fundo
-        });
-        if (t === "hotel" && (p.duracaoMin || 0) < 1440) {
-          n.horaInicio = p.horaInicio || "14:00";
-          const [hh, mm] = n.horaInicio.split(":").map(Number);
-          n.duracaoMin = 1440 - (hh * 60 + (mm || 0)) + 720;
-        }
-        return n;
-      });
+    "data-campo": "titulo",
+    placeholder: EX_TITULO[f.tipo] || "Ex: Templo Wat Arun",
+    autoFocus: !evento.titulo
+  })), f.tipo === "voo" && /*#__PURE__*/React.createElement("div", {
+    className: "lado2",
+    style: {
+      gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)"
     }
-  }, Object.keys(TIPOS).map(k => /*#__PURE__*/React.createElement("option", {
-    key: k,
-    value: k
-  }, TIPOS[k].n)))), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Data"
+  }, /*#__PURE__*/React.createElement(Campo, {
+    rot: "Companhia e numero"
   }, /*#__PURE__*/React.createElement("input", {
-    type: "date",
-    value: f.data,
-    onChange: e => set("data", e.target.value)
-  }))), f.tipo === "hotel" ? (() => {
+    value: f.numeroVoo || "",
+    onChange: e => set("numeroVoo", e.target.value),
+    placeholder: "Ex: Emirates EK 262"
+  })), /*#__PURE__*/React.createElement(Campo, {
+    rot: "Terminal"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.terminal || "",
+    onChange: e => set("terminal", e.target.value),
+    placeholder: "Ex: T3"
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Quando"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), f.tipo === "hotel" ? (() => {
     const iniAbs = Date.parse((f.data || hoje()) + "T" + (f.horaInicio || "14:00") + ":00Z");
     const fimAbs2 = iniAbs + (f.duracaoMin || 0) * 60000;
     const dataOut = new Date(fimAbs2).toISOString().slice(0, 10);
     const horaOut = new Date(fimAbs2).toISOString().slice(11, 16);
     const recalcular = (novaData, novaHora) => {
       const alvo = Date.parse(novaData + "T" + novaHora + ":00Z");
-      const min = Math.max(60, Math.round((alvo - iniAbs) / 60000));
-      set("duracaoMin", min);
+      set("duracaoMin", Math.max(60, Math.round((alvo - iniAbs) / 60000)));
     };
     const noites = Math.max(1, Math.round((Date.parse(dataOut + "T00:00:00Z") - Date.parse((f.data || hoje()) + "T00:00:00Z")) / 86400000));
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      className: "grid3"
+      className: "lado2"
     }, /*#__PURE__*/React.createElement(Campo, {
-      rot: "Check-in"
+      rot: "Data do check-in"
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "date",
+      value: f.data,
+      onChange: e => set("data", e.target.value)
+    })), /*#__PURE__*/React.createElement(Campo, {
+      rot: "Hora do check-in"
     }, /*#__PURE__*/React.createElement("input", {
       type: "time",
       value: f.horaInicio,
       onChange: e => set("horaInicio", e.target.value)
-    })), /*#__PURE__*/React.createElement(Campo, {
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "lado2"
+    }, /*#__PURE__*/React.createElement(Campo, {
       rot: "Data do check-out"
     }, /*#__PURE__*/React.createElement("input", {
       type: "date",
@@ -6153,14 +6699,16 @@ function FormEvento({
       value: horaOut,
       onChange: e => recalcular(dataOut, e.target.value)
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "aviso",
-      style: {
-        marginTop: -4,
-        marginBottom: 13
-      }
+      className: "resumo-hora"
     }, noites, " noite", noites > 1 ? "s" : "", " ", "\u00B7", " entra ", fmtDataCurta(Date.parse((f.data || hoje()) + "T12:00:00Z"), 0), " as ", f.horaInicio, ", sai ", fmtDataCurta(Date.parse(dataOut + "T12:00:00Z"), 0), " as ", horaOut));
-  })() : /*#__PURE__*/React.createElement("div", {
-    className: "grid3"
+  })() : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Campo, {
+    rot: "Data"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: f.data,
+    onChange: e => set("data", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "lado3"
   }, /*#__PURE__*/React.createElement(Campo, {
     rot: "Inicio"
   }, /*#__PURE__*/React.createElement("input", {
@@ -6174,13 +6722,73 @@ function FormEvento({
     value: dur,
     onChange: e => set("duracaoMin", durDias * 1440 + hm2min(e.target.value))
   })), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Mais dias"
+    rot: "Fim"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    value: fimTxt,
+    onChange: e => mudarFim(e.target.value),
+    disabled: !f.horaInicio
+  }))), fimTxt && /*#__PURE__*/React.createElement("div", {
+    className: "resumo-hora"
+  }, /*#__PURE__*/React.createElement("b", null, f.horaInicio, " ", "\u2192", " ", fimTxt), " ", "\u00B7", " ", durTexto(f.duracaoMin), pulaDia === 1 && " \u00B7 termina no dia seguinte", pulaDia > 1 && " \u00B7 termina " + fmtDataCurta(fim, tzF), f.tz !== tzF && " \u00B7 chega no horario de " + fusoNome(tzF) + " (" + (tzF > f.tz ? "+" : "-") + durTexto(Math.abs(tzF - f.tz)) + ")")), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "conflito"
+  }, "Esse horario se sobrepoe a: ", conflitos.map(c => c.titulo).join(", "), ". Da para salvar assim mesmo, mas confira."), agenda && f.tipo !== "hotel" && /*#__PURE__*/React.createElement(Grupo, {
+    titulo: "Ver o dia",
+    icone: "relogio",
+    resumo: durVaga(agenda.totalLivre / 60000) + " livres",
+    aberto: !evento.titulo && !f.horaInicio
+  }, /*#__PURE__*/React.createElement(FitaDoDia, {
+    agenda: agenda,
+    tz: f.tz,
+    atual: ini != null && f.duracaoMin ? {
+      a: ini,
+      b: fim
+    } : null
+  }), agenda.livres.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 11
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rot-bloco",
+    style: {
+      marginBottom: 6
+    }
+  }, "Encaixar em um horario vago"), agenda.livres.map((l, i) => /*#__PURE__*/React.createElement("button", {
+    key: i,
+    className: "vaga",
+    onClick: () => usarVaga(l)
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "hr"
+  }, fmtHora(l.a, f.tz), " ", "\u2192", " ", l.b >= agenda.fim ? "24:00" : fmtHora(l.b, f.tz)), /*#__PURE__*/React.createElement("span", {
+    className: "dr"
+  }, durVaga((l.b - l.a) / 60000))))), agenda.ocup.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      fontSize: "0.7188em",
+      color: "var(--tinta3)"
+    }
+  }, "Ja ocupado: ", agenda.ocup.map(x => fmtHora(x.a, f.tz) + " " + x.e.titulo).join(" \u00B7 ")), agenda.fundos.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      fontSize: "0.7188em",
+      color: "var(--azul)"
+    }
+  }, "Em curso o dia todo: ", agenda.fundos.map(x => x.e.titulo).join(" \u00B7 ")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 8
+    }
+  })), /*#__PURE__*/React.createElement(Grupo, {
+    titulo: "Opcoes avancadas",
+    icone: "engrenagem",
+    resumo: resumoAvancado
+  }, f.tipo !== "hotel" && /*#__PURE__*/React.createElement(Campo, {
+    rot: "Dias a mais"
   }, /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: "0",
     value: durDias,
     onChange: e => set("duracaoMin", (+e.target.value || 0) * 1440 + hm2min(dur))
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     className: "grid2"
   }, /*#__PURE__*/React.createElement(Campo, {
     rot: "Fuso do inicio"
@@ -6223,310 +6831,20 @@ function FormEvento({
       fontSize: "0.75em",
       color: "var(--tinta2)"
     }
-  }, "Para hospedagem, aluguel de carro e outros periodos longos. Aparece no roteiro, mas o dia continua livre para passeios."))), agenda && /*#__PURE__*/React.createElement("div", {
-    className: "card pad",
-    style: {
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "baseline",
-      gap: 8,
-      marginBottom: 2
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "0.6875em",
-      fontWeight: 700,
-      textTransform: "uppercase",
-      letterSpacing: ".09em",
-      color: "var(--tinta2)"
-    }
-  }, "Como esta o dia"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginLeft: "auto",
-      fontSize: "0.75em",
-      fontWeight: 700,
-      color: "var(--jade)"
-    }
-  }, durVaga(agenda.totalLivre / 60000), " livres")), /*#__PURE__*/React.createElement(FitaDoDia, {
-    agenda: agenda,
-    tz: f.tz,
-    atual: ini != null && f.duracaoMin ? {
-      a: ini,
-      b: fim
-    } : null
-  }), agenda.livres.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 11
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "0.6875em",
-      fontWeight: 700,
-      textTransform: "uppercase",
-      letterSpacing: ".09em",
-      color: "var(--tinta2)",
-      marginBottom: 6
-    }
-  }, "Encaixar em um horario vago"), agenda.livres.map((l, i) => /*#__PURE__*/React.createElement("button", {
-    key: i,
-    className: "vaga",
-    onClick: () => usarVaga(l)
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "hr"
-  }, fmtHora(l.a, f.tz), " ", "\u2192", " ", l.b >= agenda.fim ? "24:00" : fmtHora(l.b, f.tz)), /*#__PURE__*/React.createElement("span", {
-    className: "dr"
-  }, durVaga((l.b - l.a) / 60000))))), agenda.ocup.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8,
-      fontSize: "0.7188em",
-      color: "var(--tinta3)"
-    }
-  }, "Ja ocupado: ", agenda.ocup.map(x => fmtHora(x.a, f.tz) + " " + x.e.titulo).join(" \u00B7 ")), agenda.fundos.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 6,
-      fontSize: "0.7188em",
-      color: "var(--azul)"
-    }
-  }, "Em curso o dia todo: ", agenda.fundos.map(x => x.e.titulo).join(" \u00B7 "))), conflitos.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "conflito"
-  }, "Esse horario se sobrepoe a: ", conflitos.map(c => c.titulo).join(", "), ". Da para salvar assim mesmo, mas confira."), /*#__PURE__*/React.createElement("div", {
-    className: "aviso",
-    style: {
-      marginBottom: 14
-    }
-  }, "Termina as ", /*#__PURE__*/React.createElement("b", null, fmtHora(fim, tzF)), " de ", fmtDataCurta(fim, tzF), " no horario de ", fusoNome(tzF), ".", f.tz !== tzF && /*#__PURE__*/React.createElement(React.Fragment, null, " Voce ganha ou perde ", durTexto(Math.abs(tzF - f.tz)), " ao cruzar o fuso.")), /*#__PURE__*/React.createElement("div", {
-    className: "grid2"
-  }, /*#__PURE__*/React.createElement(Campo, {
-    rot: "Local de inicio"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.localInicio,
-    onChange: e => set("localInicio", e.target.value),
-    placeholder: "Saida"
-  })), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Local de fim"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.localFim,
-    onChange: e => set("localFim", e.target.value),
-    placeholder: "Chegada"
-  }))), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Cidade"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.cidade,
-    onChange: e => set("cidade", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "sec"
-  }, /*#__PURE__*/React.createElement("h2", null, "Onde fica"), /*#__PURE__*/React.createElement("div", {
-    className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card pad",
-    style: {
-      marginBottom: 13
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 9,
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: f.lat == null ? "var(--ambar)" : "var(--jade)",
-      display: "flex"
-    }
-  }, /*#__PURE__*/React.createElement(Ico, {
-    n: f.lat == null ? "aviso" : "check",
-    tam: 18
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: "0.875em"
-    }
-  }, f.lat == null ? "Sem ponto no mapa" : "Ponto marcado"), /*#__PURE__*/React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: "0.7188em",
-      color: "var(--tinta2)"
-    }
-  }, f.lat == null ? "Sem ele o evento nao aparece no mapa nem calcula a hora de sair" : f.lat.toFixed(5) + ", " + f.lng.toFixed(5)))), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Endereco ou nome do lugar"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.endereco,
-    onChange: e => set("endereco", e.target.value),
-    onKeyDown: e => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        acharNoMapa();
-      }
-    },
-    enterKeyHint: "search",
-    placeholder: "Ex: Aeroporto de Guarulhos, Wat Arun, ou Rua tal, 123"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn",
-    style: {
-      flex: 1
-    },
-    disabled: buscandoGeo,
-    onClick: acharNoMapa
-  }, buscandoGeo ? "Procurando..." : "Achar no mapa"), /*#__PURE__*/React.createElement("button", {
-    className: "btn sec",
-    style: {
-      flex: 1
-    },
-    onClick: () => {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(p2 => marcarPonto(p2.coords.latitude, p2.coords.longitude), () => {}, {
-        timeout: 8000
-      });
-    }
-  }, "Estou aqui agora")), opcoesGeo && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: "0.6875em",
-      color: "var(--tinta3)",
-      marginBottom: 6,
-      textTransform: "uppercase",
-      letterSpacing: ".08em"
-    }
-  }, "Qual destes?"), opcoesGeo.map((o, i) => /*#__PURE__*/React.createElement("button", {
-    key: i,
-    className: "item",
-    style: {
-      width: "100%",
-      textAlign: "left",
-      display: "flex",
-      gap: 10,
-      alignItems: "center",
-      marginBottom: 6
-    },
-    onClick: () => marcarPonto(o.lat, o.lng)
-  }, /*#__PURE__*/React.createElement(Ico, {
-    n: "mapa",
-    tam: 16
+  }, "Para hospedagem, aluguel de carro e outros periodos longos. Aparece no roteiro, mas o dia continua livre.")))), /*#__PURE__*/React.createElement(SecaoOnde, {
+    f: f,
+    setF: setF,
+    aviso: aviso
   }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Detalhes"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), /*#__PURE__*/React.createElement(Grupo, {
+    titulo: "Reserva, custo e contato",
+    icone: "documento",
+    resumo: resumoReserva
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 600,
-      fontSize: "0.875em"
-    }
-  }, o.nome), o.detalhe && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "0.75em",
-      color: "var(--tinta2)",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, o.detalhe)), o.km != null && /*#__PURE__*/React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: "0.6875em",
-      color: "var(--tinta3)"
-    }
-  }, o.km < 10 ? o.km.toFixed(1) + " km" : Math.round(o.km) + " km"))), /*#__PURE__*/React.createElement("button", {
-    className: "btn sec full",
-    style: {
-      fontSize: "0.8125em"
-    },
-    onClick: () => setOpcoesGeo(null)
-  }, "Nenhum destes")), f.lat != null && /*#__PURE__*/React.createElement("button", {
-    className: "btn sec full",
-    style: {
-      marginTop: 8,
-      fontSize: "0.8125em"
-    },
-    onClick: () => setF(p => Object.assign({}, p, {
-      lat: null,
-      lng: null
-    }))
-  }, "Apagar o ponto"), /*#__PURE__*/React.createElement("div", {
-    className: "aviso",
-    style: {
-      marginTop: 11
-    }
-  }, "O ponto e o que coloca o evento no mapa. Escreva o nome do lugar e toque em Achar no mapa (se aparecerem opcoes, escolha a certa), toque em Estou aqui agora quando estiver no lugar, ou cole no campo de endereco as coordenadas copiadas do Google Maps. Tambem da para escolher pela aba Mapa em Hospedagem, Passeios e Comer."), /*#__PURE__*/React.createElement("details", {
-    style: {
-      marginTop: 10
-    }
-  }, /*#__PURE__*/React.createElement("summary", {
-    style: {
-      fontSize: "0.7812em",
-      color: "var(--tinta2)",
-      cursor: "pointer"
-    }
-  }, "Tenho um link do Google Maps"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.mapsUrl,
-    onChange: e => {
-      const v = e.target.value;
-      const c = coordsDoTexto(v);
-      setF(p => Object.assign({}, p, {
-        mapsUrl: v
-      }, c && p.lat == null ? {
-        lat: c.lat,
-        lng: c.lng
-      } : {}));
-      if (c && f.lat == null && aviso) aviso("Ponto marcado pelo link");
-    },
-    placeholder: "Cole o link aqui"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "aviso",
-    style: {
-      marginTop: 8
-    }
-  }, "Se o link completo tiver as coordenadas, o ponto e marcado sozinho. Link curto (maps.app.goo.gl) nao traz: nesse caso, no Google Maps segure o dedo sobre o lugar, copie os numeros que aparecem (ex: -23.4356, -46.4731) e cole no campo de endereco acima.")))), /*#__PURE__*/React.createElement("div", {
-    className: "sec"
-  }, /*#__PURE__*/React.createElement("h2", null, "Contato do local"), /*#__PURE__*/React.createElement("div", {
-    className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "grid2"
-  }, /*#__PURE__*/React.createElement(Campo, {
-    rot: "Nome"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.contatoNome,
-    onChange: e => set("contatoNome", e.target.value),
-    placeholder: "Hotel, guia, restaurante"
-  })), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Telefone"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.contatoFone,
-    onChange: e => set("contatoFone", e.target.value),
-    placeholder: "+66 ..."
-  }))), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Site ou WhatsApp"
-  }, /*#__PURE__*/React.createElement("input", {
-    value: f.contatoSite,
-    onChange: e => set("contatoSite", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "sec"
-  }, /*#__PURE__*/React.createElement("h2", null, "Reserva e custo"), /*#__PURE__*/React.createElement("div", {
-    className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "grid3"
+    className: "lado3"
   }, /*#__PURE__*/React.createElement(Campo, {
     rot: "Localizador"
   }, /*#__PURE__*/React.createElement("input", {
@@ -6537,58 +6855,170 @@ function FormEvento({
   }, /*#__PURE__*/React.createElement("input", {
     value: f.custo,
     onChange: e => set("custo", e.target.value),
-    placeholder: "0,00"
+    placeholder: "0,00",
+    inputMode: "decimal"
   })), /*#__PURE__*/React.createElement(Campo, {
     rot: "Moeda"
   }, /*#__PURE__*/React.createElement("input", {
     value: f.moeda,
     onChange: e => set("moeda", e.target.value)
-  }))), pessoal && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "sec"
-  }, /*#__PURE__*/React.createElement("h2", null, "Seu look"), /*#__PURE__*/React.createElement("div", {
-    className: "risco"
-  })), (pessoal.pessoas || []).map((nome, i) => /*#__PURE__*/React.createElement(Campo, {
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "lado2"
+  }, /*#__PURE__*/React.createElement(Campo, {
+    rot: "Contato"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.contatoNome,
+    onChange: e => set("contatoNome", e.target.value),
+    placeholder: "Hotel, guia, motorista"
+  })), /*#__PURE__*/React.createElement(Campo, {
+    rot: "Telefone"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.contatoFone,
+    onChange: e => set("contatoFone", e.target.value),
+    placeholder: "+66 ...",
+    inputMode: "tel"
+  }))), /*#__PURE__*/React.createElement(Campo, {
+    rot: "Site ou WhatsApp"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.contatoSite,
+    onChange: e => set("contatoSite", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "aviso",
+    style: {
+      marginBottom: 12
+    }
+  }, "Voucher e outros arquivos voce anexa no proprio evento depois de salvar, em Documentos.")), /*#__PURE__*/React.createElement(Grupo, {
+    titulo: "Look e checklist",
+    icone: "mala",
+    resumo: resumoLevar
+  }, pessoal && /*#__PURE__*/React.createElement(React.Fragment, null, (pessoal.pessoas || []).map((nome, i) => /*#__PURE__*/React.createElement(Campo, {
     key: i,
-    rot: nome
+    rot: "Look " + (pessoal.pessoas.length > 1 ? nome : "")
   }, /*#__PURE__*/React.createElement("input", {
     value: (f._meus || {})[i] || "",
     onChange: e => setLook(i, e.target.value),
     placeholder: "Camiseta, calca, tenis..."
   }))), /*#__PURE__*/React.createElement("div", {
-    className: "aviso",
     style: {
-      marginBottom: 14
+      fontSize: "0.7188em",
+      color: "var(--tinta3)",
+      margin: "-6px 0 12px"
     }
-  }, "O look e so seu. Cada participante da viagem anota o dele e ninguem ve o do outro.")), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Observacoes"
+  }, "O look e so seu. Ninguem da viagem ve o do outro.")), /*#__PURE__*/React.createElement("div", {
+    className: "rot-bloco",
+    style: {
+      marginBottom: 6
+    }
+  }, "Levar e fazer"), lista.map((x, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "item",
+    style: {
+      padding: "6px 0"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "cx" + (x.ok ? " on" : ""),
+    onClick: () => set("checklist", lista.map((y, j) => j === i ? Object.assign({}, y, {
+      ok: !y.ok
+    }) : y))
+  }, "\u2713"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      fontSize: "0.875em",
+      textDecoration: x.ok ? "line-through" : "none",
+      color: x.ok ? "var(--tinta3)" : "var(--tinta)"
+    }
+  }, x.t), /*#__PURE__*/React.createElement("button", {
+    className: "pill",
+    style: {
+      padding: "4px 9px"
+    },
+    "aria-label": "Remover",
+    onClick: () => set("checklist", lista.filter((y, j) => j !== i))
+  }, "\u2715"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: novoItem,
+    style: {
+      flex: 1,
+      minWidth: 0
+    },
+    placeholder: "Ex: Passaporte",
+    enterKeyHint: "done",
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addItem(e.target.value);
+        e.target.value = "";
+      }
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn sec",
+    style: {
+      flex: "0 0 auto"
+    },
+    onClick: () => {
+      addItem(novoItem.current && novoItem.current.value);
+      if (novoItem.current) novoItem.current.value = "";
+    }
+  }, "Incluir")), sugestoes.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      margin: "10px 0 12px"
+    }
+  }, sugestoes.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s,
+    className: "pill",
+    onClick: () => addItem(s)
+  }, "+ ", s))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 8
+    }
+  })), /*#__PURE__*/React.createElement(Grupo, {
+    titulo: "Observacoes",
+    icone: "lapis",
+    resumo: f.obs ? f.obs.slice(0, 40) + (f.obs.length > 40 ? "..." : "") : ""
   }, /*#__PURE__*/React.createElement("textarea", {
     value: f.obs,
     onChange: e => set("obs", e.target.value),
-    placeholder: "Tudo que voce quer lembrar na hora"
-  })), /*#__PURE__*/React.createElement(Campo, {
-    rot: "Status"
-  }, /*#__PURE__*/React.createElement("select", {
-    value: f.status,
-    onChange: e => set("status", e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "previsto"
-  }, "Previsto"), /*#__PURE__*/React.createElement("option", {
-    value: "concluido"
-  }, "Concluido"), /*#__PURE__*/React.createElement("option", {
-    value: "cancelado"
-  }, "Cancelado"))), /*#__PURE__*/React.createElement("button", {
+    placeholder: "Tudo que voce quer lembrar na hora. Aparece no cartao do roteiro.",
+    style: {
+      marginBottom: 12
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, "Status"), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 18
+    }
+  }, STATUS_EVENTO.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.v,
+    className: "pill" + (f.status === s.v ? " on" : ""),
+    onClick: () => set("status", s.v)
+  }, s.n))), /*#__PURE__*/React.createElement("button", {
     className: "btn full",
     onClick: () => onSalvar(f)
-  }, "Salvar evento"), evento.titulo && /*#__PURE__*/React.createElement("button", {
+  }, evento.titulo ? "Salvar" : "Adicionar ao roteiro"), evento.titulo && /*#__PURE__*/React.createElement("button", {
     className: "btn sec full",
     style: {
       marginTop: 8,
       color: "var(--carimbo)"
     },
     onClick: () => {
-      if (confirm("Excluir este evento?")) onExcluir(f.id);
+      if (confirm("Excluir do roteiro?")) onExcluir(f.id);
     }
-  }, "Excluir evento"), /*#__PURE__*/React.createElement("div", {
+  }, "Excluir"), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 10
     }
@@ -6777,7 +7207,30 @@ function DetalheEvento({
       marginTop: 6
     },
     onClick: () => acoes.look(e)
-  }, "Definir o look"))), /*#__PURE__*/React.createElement(Linha, {
+  }, "Definir o look"))), (e.numeroVoo || e.terminal) && /*#__PURE__*/React.createElement(Linha, {
+    k: "Voo"
+  }, [e.numeroVoo, e.terminal && "Terminal " + e.terminal].filter(Boolean).join(" \u00B7 ")), (() => {
+    const atual = dados.eventos.find(x => x.id === e.id) || e;
+    const l = atual.checklist || [];
+    if (!l.length) return null;
+    return /*#__PURE__*/React.createElement(Linha, {
+      k: "Levar e fazer"
+    }, /*#__PURE__*/React.createElement("div", null, l.map((x, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "item",
+      style: {
+        padding: "4px 0"
+      },
+      onClick: () => podeEditar !== false && acoes.marcarItem && acoes.marcarItem(atual, i)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "cx" + (x.ok ? " on" : "")
+    }, "\u2713"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textDecoration: x.ok ? "line-through" : "none",
+        color: x.ok ? "var(--tinta3)" : "inherit"
+      }
+    }, x.t)))));
+  })(), /*#__PURE__*/React.createElement(Linha, {
     k: "Observacoes"
   }, e.obs ? /*#__PURE__*/React.createElement("span", {
     style: {
@@ -7972,6 +8425,19 @@ function AbaMapa({
       camada.push(l);
     }
     dados.eventos.forEach(e => {
+      if (e.latIni != null) {
+        const ms = L.marker([e.latIni, e.lngIni], {
+          icon: L.divIcon({
+            className: "",
+            html: '<div class="pin-dia saida">D' + numDia(e.dia) + '</div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        }).bindPopup("<b>Saida: " + (e.localInicio || e.titulo) + "</b><br>" + e.titulo + (e.horaInicio ? " \u00B7 " + e.horaInicio : ""));
+        ms.addTo(m);
+        camada.push(ms);
+        pontos.push([e.latIni, e.lngIni]);
+      }
       if (e.lat == null) return;
       const mk = L.marker([e.lat, e.lng], {
         icon: L.divIcon({
@@ -7998,7 +8464,11 @@ function AbaMapa({
       camada.push(mk);
       pontos.push([posFamilia.lat, posFamilia.lng]);
     }
-    const rota = dados.eventos.filter(e => e.lat != null).sort(porDataHora).map(e => [e.lat, e.lng]);
+    const rota = dados.eventos.slice().sort(porDataHora).reduce((l, e) => {
+      if (e.latIni != null) l.push([e.latIni, e.lngIni]);
+      if (e.lat != null) l.push([e.lat, e.lng]);
+      return l;
+    }, []);
     if (rota.length > 1) {
       const l = L.polyline(rota, {
         color: "var(--ambar)",
@@ -12449,6 +12919,18 @@ function App() {
         } : x)
       }));
       aviso("Anotado");
+    },
+    marcarItem: (e, i) => {
+      salvar(d => ({
+        ...d,
+        eventos: d.eventos.map(x => x.id === e.id ? {
+          ...x,
+          checklist: (x.checklist || []).map((y, j) => j === i ? {
+            ...y,
+            ok: !y.ok
+          } : y)
+        } : x)
+      }));
     },
     concluir: e => {
       salvar(d => ({
