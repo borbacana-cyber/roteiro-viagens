@@ -1323,7 +1323,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 15:17"
+  versao: "2026-10-05 18:05"
 };
 
 /* ============================================================
@@ -2281,14 +2281,92 @@ async function geocodificar(nome) {
   return null;
 }
 async function geocodificarEndereco(texto) {
-  const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(texto));
-  const j = await r.json();
-  if (j && j.length) return {
-    lat: parseFloat(j[0].lat),
-    lng: parseFloat(j[0].lon),
-    nome: j[0].display_name
+  let l = await buscarNominatim(texto).catch(() => []);
+  if (!l.length) l = await buscarPhoton(texto).catch(() => []);
+  return l.length ? l[0] : null;
+}
+
+/* Busca do ponto do evento. Tenta do mais especifico ao mais simples, troca palavras
+   comuns pelo ingles (aeroporto -> airport), cai para um segundo servico que tolera
+   erro de digitacao e devolve ate 6 opcoes, as perto da cidade do evento primeiro. */
+function coordsDoTexto(t) {
+  t = String(t || "");
+  const m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || t.match(/[?&](?:q|ll|query|destination|center)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i) || t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/^\s*\(?(-?\d{1,2}\.\d+)\s*[,; ]\s*(-?\d{1,3}\.\d+)\)?\s*$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]),
+    lng = parseFloat(m[2]);
+  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) return null;
+  return {
+    lat: lat,
+    lng: lng
   };
-  return null;
+}
+async function buscarNominatim(q) {
+  const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=pt-BR&q=" + encodeURIComponent(q));
+  const j = await r.json();
+  return (j || []).map(x => {
+    const partes = String(x.display_name || "").split(",").map(s => s.trim());
+    return {
+      lat: parseFloat(x.lat),
+      lng: parseFloat(x.lon),
+      nome: x.name || partes[0] || q,
+      detalhe: partes.slice(x.name ? 1 : 1, 4).filter(p => p && p !== x.name).join(", ")
+    };
+  });
+}
+async function buscarPhoton(q, perto) {
+  let u = "https://photon.komoot.io/api/?limit=5&q=" + encodeURIComponent(q);
+  if (perto) u += "&lat=" + perto.lat + "&lon=" + perto.lng;
+  const r = await fetch(u);
+  const j = await r.json();
+  return (j && j.features || []).map(f => {
+    const p = f.properties || {};
+    return {
+      lat: f.geometry.coordinates[1],
+      lng: f.geometry.coordinates[0],
+      nome: p.name || [p.street, p.housenumber].filter(Boolean).join(" ") || q,
+      detalhe: [p.city || p.county, p.state, p.country].filter(Boolean).join(", ")
+    };
+  });
+}
+const PALAVRAS_LUGAR = [[/\baeroporto\b/i, "airport"], [/\bpraia\b/i, "beach"], [/\btemplo\b/i, "temple"], [/\bilhas?\b/i, "island"], [/\bmercado\b/i, "market"], [/\bpal[a\u00e1]cio\b/i, "palace"], [/\besta[c\u00e7][a\u00e3]o\b/i, "station"], [/\bpier\b/i, "pier"]];
+async function buscarLugares(texto, cidade) {
+  const base = String(texto || "").replace(/\s+/g, " ").trim();
+  if (!base) return [];
+  const cid = String(cidade || "").split(/[,(\u2192]/)[0].trim();
+  const temCid = cid && semAcento(base).toLowerCase().indexOf(semAcento(cid).toLowerCase()) < 0;
+  const perto = cid ? await geocodificar(cid).catch(() => null) : null;
+  const ingles = PALAVRAS_LUGAR.reduce((t, p) => t.replace(p[0], p[1]), base);
+  const tentativas = [];
+  if (temCid) tentativas.push(base + ", " + cid);
+  tentativas.push(base);
+  if (ingles !== base) {
+    if (temCid) tentativas.push(ingles + ", " + cid);
+    tentativas.push(ingles);
+  }
+  let achados = [];
+  for (const q of tentativas.filter((x, i, a) => a.indexOf(x) === i)) {
+    achados = await buscarNominatim(q).catch(() => []);
+    if (achados.length) break;
+  }
+  if (!achados.length) achados = await buscarPhoton(base, perto).catch(() => []);
+  if (!achados.length && ingles !== base) achados = await buscarPhoton(ingles, perto).catch(() => []);
+  const vistos = {};
+  achados = achados.filter(a => {
+    if (isNaN(a.lat) || isNaN(a.lng)) return false;
+    const k = a.lat.toFixed(3) + "," + a.lng.toFixed(3);
+    if (vistos[k]) return false;
+    return vistos[k] = true;
+  });
+  if (perto) {
+    achados.forEach((a, i) => {
+      a.km = distanciaKm(perto.lat, perto.lng, a.lat, a.lng);
+      a.ordem = i;
+    });
+    // mantem a relevancia do servico, mas o que esta longe da cidade vai para o fim
+    achados.sort((a, b) => (a.km > 150) - (b.km > 150) || a.ordem - b.ordem);
+  }
+  return achados.slice(0, 6);
 }
 async function buscarClima(cidade, data) {
   if (!cidade || !data) return null;
@@ -5911,6 +5989,25 @@ function FormEvento({
   }));
   const [temRascunho, setTemRascunho] = useState(!!rascunho);
   const [buscandoGeo, setBuscandoGeo] = useState(false);
+  const [opcoesGeo, setOpcoesGeo] = useState(null);
+  const marcarPonto = (lat, lng) => {
+    setOpcoesGeo(null);
+    setF(p => Object.assign({}, p, {
+      lat: lat,
+      lng: lng
+    }));
+  };
+  const acharNoMapa = async () => {
+    const c = coordsDoTexto(f.endereco) || coordsDoTexto(f.mapsUrl);
+    if (c) return marcarPonto(c.lat, c.lng);
+    const texto = (f.endereco || "").trim() || f.localFim || f.localInicio || f.cidade || "";
+    if (!texto) return aviso ? aviso("Escreva o nome do lugar ou o endereco primeiro") : null;
+    setBuscandoGeo(true);
+    setOpcoesGeo(null);
+    const l = await buscarLugares(texto, f.cidade).catch(() => []);
+    setBuscandoGeo(false);
+    if (l.length === 1) marcarPonto(l[0].lat, l[0].lng);else if (l.length) setOpcoesGeo(l);else if (aviso) aviso("Nao achei. Tente so o nome do lugar, ou cole as coordenadas do Google Maps");
+  };
   const set = (k, v) => setF(p => Object.assign({}, p, {
     [k]: v
   }));
@@ -6264,7 +6361,14 @@ function FormEvento({
   }, /*#__PURE__*/React.createElement("input", {
     value: f.endereco,
     onChange: e => set("endereco", e.target.value),
-    placeholder: "Ex: Wat Arun, ou Rua tal, 123"
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        acharNoMapa();
+      }
+    },
+    enterKeyHint: "search",
+    placeholder: "Ex: Aeroporto de Guarulhos, Wat Arun, ou Rua tal, 123"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -6276,17 +6380,7 @@ function FormEvento({
       flex: 1
     },
     disabled: buscandoGeo,
-    onClick: async () => {
-      const alvo = [f.endereco, f.localFim || f.localInicio, f.cidade].filter(Boolean).join(", ");
-      if (!alvo) return aviso ? aviso("Escreva o endereco ou a cidade primeiro") : null;
-      setBuscandoGeo(true);
-      const r = await geocodificarEndereco(alvo).catch(() => null);
-      setBuscandoGeo(false);
-      if (r) setF(p => Object.assign({}, p, {
-        lat: r.lat,
-        lng: r.lng
-      }));else if (aviso) aviso("Nao achei esse endereco. Tente com a cidade junto.");
-    }
+    onClick: acharNoMapa
   }, buscandoGeo ? "Procurando..." : "Achar no mapa"), /*#__PURE__*/React.createElement("button", {
     className: "btn sec",
     style: {
@@ -6294,14 +6388,69 @@ function FormEvento({
     },
     onClick: () => {
       if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(p2 => setF(p => Object.assign({}, p, {
-        lat: p2.coords.latitude,
-        lng: p2.coords.longitude
-      })), () => {}, {
+      navigator.geolocation.getCurrentPosition(p2 => marcarPonto(p2.coords.latitude, p2.coords.longitude), () => {}, {
         timeout: 8000
       });
     }
-  }, "Estou aqui agora")), f.lat != null && /*#__PURE__*/React.createElement("button", {
+  }, "Estou aqui agora")), opcoesGeo && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: "0.6875em",
+      color: "var(--tinta3)",
+      marginBottom: 6,
+      textTransform: "uppercase",
+      letterSpacing: ".08em"
+    }
+  }, "Qual destes?"), opcoesGeo.map((o, i) => /*#__PURE__*/React.createElement("button", {
+    key: i,
+    className: "item",
+    style: {
+      width: "100%",
+      textAlign: "left",
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 6
+    },
+    onClick: () => marcarPonto(o.lat, o.lng)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "mapa",
+    tam: 16
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, o.nome), o.detalhe && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: "var(--tinta2)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, o.detalhe)), o.km != null && /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: "0.6875em",
+      color: "var(--tinta3)"
+    }
+  }, o.km < 10 ? o.km.toFixed(1) + " km" : Math.round(o.km) + " km"))), /*#__PURE__*/React.createElement("button", {
+    className: "btn sec full",
+    style: {
+      fontSize: "0.8125em"
+    },
+    onClick: () => setOpcoesGeo(null)
+  }, "Nenhum destes")), f.lat != null && /*#__PURE__*/React.createElement("button", {
     className: "btn sec full",
     style: {
       marginTop: 8,
@@ -6316,7 +6465,7 @@ function FormEvento({
     style: {
       marginTop: 11
     }
-  }, "O ponto e o que coloca o evento no mapa. Voce consegue de tres formas: escrevendo o endereco e tocando em Achar no mapa, estando no lugar e tocando em Estou aqui agora, ou escolhendo pela aba Mapa em Hospedagem, Passeios e Comer."), /*#__PURE__*/React.createElement("details", {
+  }, "O ponto e o que coloca o evento no mapa. Escreva o nome do lugar e toque em Achar no mapa (se aparecerem opcoes, escolha a certa), toque em Estou aqui agora quando estiver no lugar, ou cole no campo de endereco as coordenadas copiadas do Google Maps. Tambem da para escolher pela aba Mapa em Hospedagem, Passeios e Comer."), /*#__PURE__*/React.createElement("details", {
     style: {
       marginTop: 10
     }
@@ -6332,14 +6481,24 @@ function FormEvento({
     }
   }, /*#__PURE__*/React.createElement("input", {
     value: f.mapsUrl,
-    onChange: e => set("mapsUrl", e.target.value),
+    onChange: e => {
+      const v = e.target.value;
+      const c = coordsDoTexto(v);
+      setF(p => Object.assign({}, p, {
+        mapsUrl: v
+      }, c && p.lat == null ? {
+        lat: c.lat,
+        lng: c.lng
+      } : {}));
+      if (c && f.lat == null && aviso) aviso("Ponto marcado pelo link");
+    },
     placeholder: "Cole o link aqui"
   }), /*#__PURE__*/React.createElement("div", {
     className: "aviso",
     style: {
       marginTop: 8
     }
-  }, "O link so serve para abrir a rota no Google Maps. Ele nao coloca o evento no nosso mapa, para isso use o ponto acima.")))), /*#__PURE__*/React.createElement("div", {
+  }, "Se o link completo tiver as coordenadas, o ponto e marcado sozinho. Link curto (maps.app.goo.gl) nao traz: nesse caso, no Google Maps segure o dedo sobre o lugar, copie os numeros que aparecem (ex: -23.4356, -46.4731) e cole no campo de endereco acima.")))), /*#__PURE__*/React.createElement("div", {
     className: "sec"
   }, /*#__PURE__*/React.createElement("h2", null, "Contato do local"), /*#__PURE__*/React.createElement("div", {
     className: "risco"
