@@ -929,6 +929,7 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .pin-n.feito{opacity:.55}
 .pin-n.sel{transform:scale(1.22)}
 .pin-hotel{width:30px;height:30px;border-radius:9px;background:var(--cartao);border:1.5px solid var(--linha);color:var(--tinta2);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(13,13,13,.18)}
+.pin-parada{width:24px;height:24px;border-radius:99px;background:var(--cartao);border:1.5px solid var(--tinta2);color:var(--tinta2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;font-family:"Avenir Next",Avenir,Inter,sans-serif;box-shadow:0 1px 3px rgba(13,13,13,.18)}
 .pin-chegada{width:12px;height:12px;border-radius:99px;background:var(--cartao);border:3px solid var(--tinta)}
 .rot-trecho{transform:translate(-50%,-50%);display:inline-block;white-space:nowrap;background:var(--cartao);border:1px solid var(--linha);border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:700;color:var(--tinta2);box-shadow:0 1px 3px rgba(13,13,13,.12);font-family:"Avenir Next",Avenir,Inter,sans-serif}
 .rot-trecho.apertado{color:var(--ambar);border-color:var(--ambar)}
@@ -957,6 +958,11 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .fm-linha.ambar{color:var(--ambar)}
 .fm-acoes{display:flex;gap:8px;margin-top:12px}
 .fm-acoes .btn{flex:1;font-size:0.8125em;padding:10px 8px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.opc-lugar{display:block;width:100%;text-align:left;background:var(--papel2);border:1px solid var(--linha);border-radius:10px;padding:8px 10px;margin-bottom:6px;color:var(--tinta)}
+.opc-lugar .n{font-weight:600;font-size:0.8125em}
+.opc-lugar .t{font-weight:400;color:var(--tinta3)}
+.opc-lugar .ap{margin-left:6px;font-size:0.6875em;color:var(--ambar);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.opc-lugar .d{font-size:0.7188em;color:var(--tinta2);margin-top:2px}
 .grupo{border:1px solid var(--linha);border-radius:12px;background:var(--cartao);margin-bottom:10px}
 .grupo-cab{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;background:none;border:0;text-align:left;font-weight:600;font-size:0.875em;color:var(--tinta)}
 .grupo-cab .t{flex:0 0 auto}
@@ -1407,7 +1413,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-06 12:19"
+  versao: "2026-10-06 14:40"
 };
 
 /* ============================================================
@@ -1732,7 +1738,7 @@ function textoConexao(c) {
 }
 
 /* ---------- Localizar automaticamente (P1-6) ---------- */
-const precisaDePonto = e => !!e && !e.saidaDe && e.status !== "cancelado" && TIPOS_COM_LUGAR.indexOf(e.tipo) >= 0 && e.lat == null && e.latIni == null;
+const precisaDePonto = e => !!e && !e.saidaDe && e.status !== "cancelado" && TIPOS_COM_LUGAR.indexOf(e.tipo) >= 0 && e.lat == null && e.latIni == null && !(e.paradas || []).some(p => p && p.lat != null);
 // o que procurar: endereco, lugar de chegada, lugar, ou o titulo sem a palavra do tipo
 function nomeParaBusca(e, lado) {
   if (lado === "saida") return (e.localInicio || "").trim();
@@ -1747,6 +1753,10 @@ function escolherLugar(lista) {
   if (perto.length === 1) return {
     ponto: perto[0]
   };
+  // varios resultados colados (bar, predio e entrada do mesmo lugar): e o mesmo lugar
+  if (perto.length > 1 && perto.every(a => a.lat != null && distanciaKm(perto[0].lat, perto[0].lng, a.lat, a.lng) <= 0.35)) return {
+    ponto: perto[0]
+  };
   if (perto.length > 1) return {
     opcoes: perto
   };
@@ -1756,6 +1766,311 @@ function escolherLugar(lista) {
     opcoes: lista
   };
 }
+/* ---------- Onde acontece x o que fazer (resolucao de local) ----------
+   O titulo diz o que a pessoa vai fazer; o lugar vem, nesta ordem:
+   1 ponto ja marcado, 2 lugar/endereco do evento, 3 entidade vinculada (hospedagem
+   com o mesmo nome), 4 origem/destino do trecho, 5 contexto seguro (hospedagem
+   ativa naquele horario), 6 so por ultimo o titulo. Texto generico ("Hotel em
+   Bangkok", "Praia em Phuket") nunca vai para a busca como se fosse nome. */
+const normLugar = t => semAcento(String(t || "")).toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+const limparNomeLugar = t => String(t || "").replace(/\([^)]*\)/g, " ").replace(/^\s*(o|a|os|as|the)\s+/i, "").replace(/\s+/g, " ").trim();
+const RE_HOTELISH = /\bhot[eé]is?\b|\bhotel\b|check ?-? ?(in|out)\b|caf[eé] da manh[aã]|\bquarto\b|\bhospedagem\b|^\s*piscina\s*(do|no)?\s*(hotel)?\s*$/i;
+const RE_GENERICO = /^\s*(o |a |no |na |ao )?(hotel|hostel|pousada|resort|hospedagem|aeroporto|praia|praias|restaurante|mercados?|balsa|porto|pier|p[ií]er|ferry|esta[cç][aã]o|rodovi[aá]ria|centro|cidade|casa)(\s+(em|de|do|da|dos|das|no|na|at[eé]|perto de|em frente)\b.*)?\s*$/i;
+const RE_CONCEITO = /^\s*(jantar|almo[cç]o|caf[eé]( da manh[aã])?|lanche|piscina( e praia)?|praia( e piscina)?|tempo livre|noite livre|dia livre|tarde livre|manh[aã] livre|livre|descanso|dormir|compras|passeio( livre)?|city tour|tour|balada|vida noturna|massagem|spa)\s*$/i;
+const ENGLISH_TERMINAL = {
+  aeroporto: "airport",
+  balsa: "pier",
+  porto: "pier",
+  pier: "pier",
+  "píer": "pier",
+  ferry: "pier",
+  estacao: "station",
+  rodoviaria: "bus terminal"
+};
+// "hotel" | "terminal" | "conceito" | "casa" | null (nome proprio)
+function tipoGenerico(t) {
+  const m = String(t || "").match(RE_GENERICO);
+  if (!m) return null;
+  const w = semAcento(m[2]).toLowerCase();
+  if (/hotel|hostel|pousada|resort|hospedagem/.test(w)) return "hotel";
+  if (/aeroporto|balsa|porto|pier|ferry|estacao|rodoviaria/.test(w)) return "terminal";
+  if (w === "casa") return "casa";
+  return "conceito";
+}
+const ehConceito = t => RE_CONCEITO.test(String(t || ""));
+// varios lugares num texto so: "Grand Palace, o Wat Pho e o Wat Arun"
+function partesDoLugar(t) {
+  let s = String(t || "");
+  if (/\s[-–]\s/.test(s)) s = s.split(/\s[-–]\s/).slice(1).join(" - ");
+  const l = s.replace(/\([^)]*\)/g, " ").split(/\s*[,;+]\s*|\s+e\s+|\s+and\s+/i).map(limparNomeLugar).filter(x => x.length >= 3);
+  if (l.length < 2 || l.some(x => tipoGenerico(x) || ehConceito(x))) return null;
+  return l;
+}
+// parte do titulo que nomeia o lugar: "Mercados - Maeklong Railway Market (Mercado do Trem)"
+function lugarNoTitulo(titulo) {
+  const s = String(titulo || "");
+  if (/\s[-–]\s/.test(s)) {
+    const x = limparNomeLugar(s.split(/\s[-–]\s/).slice(1).join(" - "));
+    if (x && !tipoGenerico(x) && !ehConceito(x)) return x;
+  }
+  return null;
+}
+// origem e destino escritos no titulo do trecho: "Hotel ate Balsa", "Transfer X para Y"
+function trechoNoTitulo(titulo) {
+  const s = String(titulo || "").replace(/^\s*(transfer|translado|ida|volta|retorno|deslocamento|taxi|t[aá]xi|uber)\s+(ao|a|para o|para a|ate o|at[eé])?\s*/i, "");
+  const m = s.match(/^(?:de\s+)?(.+?)\s+(?:para|at[eé]|->|→)\s+(.+)$/i);
+  return m ? {
+    de: limparNomeLugar(m[1]),
+    para: limparNomeLugar(m[2])
+  } : null;
+}
+const instanteDoEvento = (e, fim) => e.horaInicio ? fim ? fimAbs(e) : inicioAbs(e) : Date.parse((e.data || "2000-01-01") + "T12:00:00Z") - (e.tz || 0) * 60000;
+// hospedagem em curso naquele instante (com folga para check-in/check-out)
+function hospedagemAtiva(t, eventos, excluir) {
+  const hs = (eventos || []).filter(h => h.tipo === "hotel" && !h.saidaDe && h.status !== "cancelado" && h.id !== excluir && h.horaInicio && (h.duracaoMin || 0) >= 360);
+  let melhor = null,
+    dist = Infinity;
+  hs.forEach(h => {
+    const a = inicioAbs(h),
+      b = fimAbs(h);
+    const d = t < a - 4 * 3600000 ? Infinity : t > b + 3 * 3600000 ? Infinity : t < a ? a - t : t > b ? t - b : 0;
+    if (d < dist) {
+      dist = d;
+      melhor = h;
+    }
+  });
+  return melhor;
+}
+// nome da hospedagem que so foi lancada como "Hotel em Phuket": procura um check-in/check-out com nome no periodo
+function nomeDaHospedagem(h, eventos) {
+  const dataFim = new Date(fimAbs(h) + ((h.tzFim != null ? h.tzFim : h.tz) || 0) * 60000).toISOString().slice(0, 10);
+  for (const x of eventos || []) {
+    if (x.id === h.id || !x.data || x.data < h.data || x.data > dataFim) continue;
+    if (h.cidade && x.cidade && normLugar(h.cidade) !== normLugar(x.cidade)) continue;
+    const m = String(x.titulo || "").match(/check ?-? ?(?:in|out)\s+(?:(?:no|do|ao|em)\s+)?(?:hotel\s+)?(.+)$/i);
+    if (!m) continue;
+    const nome = limparNomeLugar(m[1].split(/\s[-–]\s/)[0]);
+    if (nome.length >= 4 && !tipoGenerico(nome) && !/^hotel$/i.test(nome)) return nome;
+  }
+  return null;
+}
+// hospedagem cujo nome contem o lugar citado (o cafe com elefantes acontece no hotel 3Pok Wake With Elephants)
+function hospedagemPeloNome(texto, eventos, excluir) {
+  const n = normLugar(texto);
+  if (n.length < 6) return null;
+  return (eventos || []).find(h => h.tipo === "hotel" && !h.saidaDe && h.id !== excluir && h.status !== "cancelado" && normLugar([h.titulo, h.localInicio, h.localFim].join(" ")).indexOf(n) >= 0) || null;
+}
+// Plano de um evento: o que resolver (lado) e de onde vem cada lugar
+function planejarLocal(e, eventos) {
+  const alvos = [];
+  const trecho = e.tipo === "transfer";
+  const textoUm = (lado, txt, opts) => {
+    opts = opts || {};
+    const t = limparNomeLugar(txt);
+    const tg = tipoGenerico(t);
+    const instante = instanteDoEvento(e, lado === "fim" && trecho);
+    if (tg === "casa") return alvos.push({
+      lado: lado,
+      modo: "conceito",
+      texto: t,
+      motivo: "Casa: marque o ponto uma vez e ele fica salvo"
+    });
+    // so o nome da cidade nao e um lugar: no retorno ao hotel vira a hospedagem, senao falta o lugar
+    const soCidade = t && e.cidade && normLugar(t) === normLugar(e.cidade);
+    if (soCidade && !RE_HOTELISH.test(e.titulo)) return alvos.push({
+      lado: lado,
+      modo: "faltaNome",
+      texto: t,
+      motivo: "So tem a cidade, falta o lugar"
+    });
+    if (tg === "hotel" || opts.hotelish || soCidade) {
+      const h = e.tipo === "hotel" && lado === "ponto" ? null : hospedagemAtiva(instante, eventos, e.id);
+      if (h) return alvos.push({
+        lado: lado,
+        modo: "heranca",
+        herdaDe: h.id,
+        fonte: "hospedagem",
+        texto: h.titulo
+      });
+      if (e.tipo === "hotel" && lado === "ponto") {
+        const nome = nomeDaHospedagem(e, eventos);
+        if (nome) return alvos.push({
+          lado: lado,
+          modo: "busca",
+          fonte: "contexto",
+          texto: nome,
+          endereco: e.endereco
+        });
+      }
+      if (t || opts.hotelish) return alvos.push({
+        lado: lado,
+        modo: "faltaNome",
+        texto: t || e.titulo,
+        motivo: e.tipo === "hotel" ? "Falta o nome da hospedagem" : "Nao ha hospedagem lancada nesse horario"
+      });
+    }
+    if (tg === "terminal") {
+      const w = semAcento(t.split(/\s+/)[0]).toLowerCase();
+      return alvos.push({
+        lado: lado,
+        modo: "busca",
+        fonte: "lugar",
+        texto: (ENGLISH_TERMINAL[w] || w) + (e.cidade ? " " + e.cidade : ""),
+        exibe: t
+      });
+    }
+    if (tg === "conceito") return false;
+    if (t) {
+      const partes = lado === "ponto" ? partesDoLugar(t) : null;
+      if (partes) return partes.forEach((nome, k) => alvos.push({
+        lado: "parada",
+        k: k,
+        modo: "busca",
+        fonte: "lugar",
+        texto: nome
+      }));
+      const h = hospedagemPeloNome(t, eventos, e.id);
+      return alvos.push({
+        lado: lado,
+        modo: "busca",
+        fonte: "lugar",
+        texto: t,
+        endereco: lado !== "ini" ? e.endereco : "",
+        vinculo: h ? h.id : null
+      });
+    }
+    return false;
+  };
+  if (trecho) {
+    const tt = !e.localInicio && !e.localFim ? trechoNoTitulo(e.titulo) : null;
+    if (e.latIni == null) textoUm("ini", e.localInicio || tt && tt.de || "", {
+      hotelish: !e.localInicio && !tt && /check ?-? ?out/i.test(e.titulo)
+    });
+    if (e.lat == null && textoUm("fim", e.localFim || tt && tt.para || e.endereco || "") === false) alvos.push({
+      lado: "fim",
+      modo: "conceito",
+      texto: e.titulo,
+      motivo: "O trecho nao diz para onde vai"
+    });
+    return alvos;
+  }
+  const lugar = e.localInicio || e.localFim || "";
+  // 2 lugar/endereco
+  if (lugar && textoUm("ponto", lugar) !== false) return alvos;
+  if (!lugar && e.endereco) {
+    alvos.push({
+      lado: "ponto",
+      modo: "busca",
+      fonte: "endereco",
+      texto: e.endereco,
+      endereco: e.endereco
+    });
+    return alvos;
+  }
+  // 5 hospedagem ativa (cafe da manha no hotel, piscina, check-out)
+  if (RE_HOTELISH.test(e.titulo) || RE_HOTELISH.test(lugar)) {
+    textoUm("ponto", "", {
+      hotelish: true
+    });
+    return alvos;
+  }
+  // 6 titulo, so se nomeia um lugar
+  const doTitulo = lugarNoTitulo(e.titulo);
+  if (doTitulo) {
+    textoUm("ponto", doTitulo);
+    return alvos;
+  }
+  if (ehConceito(e.titulo) || tipoGenerico(lugar) === "conceito" || ehConceito(lugar)) return [{
+    lado: "ponto",
+    modo: "conceito",
+    texto: e.titulo,
+    motivo: "Descreve o que fazer, nao onde"
+  }];
+  const t = nomeParaBusca(e);
+  if (t && !ehConceito(t)) alvos.push({
+    lado: "ponto",
+    modo: "busca",
+    fonte: "titulo",
+    texto: t
+  });else alvos.push({
+    lado: "ponto",
+    modo: "conceito",
+    texto: e.titulo,
+    motivo: "Descreve o que fazer, nao onde"
+  });
+  return alvos;
+}
+// confianca de um resultado: nome parecido com o procurado e perto da cidade do evento
+function confiancaLugar(a, texto) {
+  const q = normLugar(texto).split(" ").filter(w => w.length > 2);
+  const n = normLugar(a.nome);
+  const sim = q.length ? q.filter(w => n.indexOf(w) >= 0).length / q.length : 0;
+  const perto = a.km == null ? 0.15 : a.km <= 10 ? 0.4 : a.km <= 60 ? 0.25 : a.km <= 150 ? 0.1 : 0;
+  return Math.round((sim * 0.6 + perto) * 100) / 100;
+}
+// busca de um alvo: nome; se nao achar e houver endereco, o endereco (completo, depois mais simples)
+async function buscarAlvo(a, cidade) {
+  const l = await buscarLugares(a.texto, cidade).catch(() => []);
+  const r = escolherLugar(l);
+  if (r) return Object.assign(r, {
+    fonte: a.fonte
+  });
+  const end = String(a.endereco || "").trim();
+  if (!end) return null;
+  const partes = end.split(",").map(x => x.trim()).filter(Boolean);
+  // se o nome procurado ja era o endereco completo, comeca pela versao mais simples
+  for (let k = normLugar(end) === normLugar(a.texto) ? 1 : 0; k < partes.length - 1; k++) {
+    const q = partes.slice(k).join(", ");
+    const le = await buscarLugares(q, cidade).catch(() => []);
+    if (!le.length) continue;
+    const re = escolherLugar(le);
+    // endereco completo e unico: vale; endereco simplificado e so aproximado: a pessoa confirma
+    if (k === 0 && re && re.ponto) return {
+      ponto: re.ponto,
+      fonte: "endereco"
+    };
+    return {
+      opcoes: le.map(x => Object.assign({}, x, {
+        aprox: k > 0
+      })),
+      fonte: "endereco",
+      aprox: k > 0
+    };
+  }
+  return null;
+}
+// aplica um ponto no lado certo do evento
+function aplicarPonto(e, lado, k, lat, lng, nome) {
+  const n = Object.assign({}, e);
+  if (lado === "ini") Object.assign(n, {
+    latIni: lat,
+    lngIni: lng
+  });else if (lado === "parada") {
+    const ps = (n.paradas || []).slice();
+    ps[k] = Object.assign({}, ps[k] || {}, {
+      nome: nome || (ps[k] || {}).nome || "",
+      lat: lat,
+      lng: lng
+    });
+    n.paradas = ps;
+    // ponto principal = primeira parada com ponto, na ordem do roteiro (se o ponto nao foi marcado a mao)
+    const primeira = ps.find(p => p && p.lat != null);
+    if ((n.lat == null || n.pontoPelaParada) && primeira) Object.assign(n, {
+      lat: primeira.lat,
+      lng: primeira.lng,
+      pontoPelaParada: true
+    });
+  } else Object.assign(n, {
+    lat: lat,
+    lng: lng
+  });
+  return n;
+}
+const ROTULO_LADO = {
+  ini: "saida",
+  fim: "chegada",
+  parada: "parada"
+};
 function saidasDeHotel(eventos) {
   const lista = [];
   (eventos || []).forEach(e => {
@@ -2562,7 +2877,8 @@ async function buscarNominatimRede(q) {
       lng: parseFloat(x.lon),
       nome: x.name || partes[0] || q,
       detalhe: partes.slice(1, 4).filter(p => p && p !== x.name).join(", "),
-      cidade: (a => a.city || a.town || a.village || a.municipality || "")(x.address || {})
+      cidade: (a => a.city || a.town || a.village || a.municipality || "")(x.address || {}),
+      tipo: String(x.type || x.category || "").replace(/_/g, " ")
     };
   });
 }
@@ -2585,8 +2901,9 @@ async function buscarPhotonRede(q, perto) {
       lat: f.geometry.coordinates[1],
       lng: f.geometry.coordinates[0],
       nome: p.name || [p.street, p.housenumber].filter(Boolean).join(" ") || q,
-      detalhe: [p.city || p.county, p.state, p.country].filter(Boolean).join(", "),
-      cidade: p.city || ""
+      detalhe: [p.street, p.city || p.county, p.state, p.country].filter(Boolean).join(", "),
+      cidade: p.city || "",
+      tipo: String(p.osm_value || "").replace(/_/g, " ")
     };
   });
 }
@@ -2624,9 +2941,13 @@ async function buscarLugares(texto, cidade) {
       a.km = distanciaKm(perto.lat, perto.lng, a.lat, a.lng);
       a.ordem = i;
     });
-    // mantem a relevancia do servico, mas o que esta longe da cidade vai para o fim
-    achados.sort((a, b) => (a.km > 150) - (b.km > 150) || a.ordem - b.ordem);
   }
+  // por confianca (nome parecido e perto da cidade), mantendo a ordem do servico no empate
+  achados.forEach((a, i) => {
+    a.conf = confiancaLugar(a, base);
+    a.ordem = i;
+  });
+  achados.sort((a, b) => (a.km > 150) - (b.km > 150) || b.conf - a.conf || a.ordem - b.ordem);
   return achados.slice(0, 6);
 }
 async function buscarClima(cidade, data) {
@@ -3801,6 +4122,7 @@ function ev(o) {
     duracaoFonte: null,
     reservaStatus: "",
     pagamento: "",
+    paradas: [],
     tzBase: "",
     obs: "",
     looks: {},
@@ -9057,12 +9379,49 @@ function ResultadoLocalizar({
   r,
   dados,
   onAbrir,
-  onFechar
+  onFechar,
+  onMarcar
 }) {
+  const [marcados, setMarcados] = useState({});
   const abrir = id => {
     const e = dados.eventos.find(x => x.id === id);
     if (e) onAbrir(e);
   };
+  const chave = x => x.id + "|" + x.lado + "|" + (x.k || 0);
+  const lado = x => x.lado && x.lado !== "ponto" ? " \u00B7 " + ROTULO_LADO[x.lado] + (x.lado === "parada" ? " " + (x.k + 1) : "") : "";
+  const secao = (titulo, lista, ic, texto) => lista.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "sec"
+  }, /*#__PURE__*/React.createElement("h2", null, titulo), /*#__PURE__*/React.createElement("div", {
+    className: "risco"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, lista.map((x, i) => /*#__PURE__*/React.createElement("button", {
+    key: chave(x) + i,
+    className: "item",
+    style: {
+      width: "100%",
+      textAlign: "left"
+    },
+    onClick: () => abrir(x.id)
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: marcados[chave(x)] ? "check" : ic,
+    tam: 16
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: "0.875em"
+    }
+  }, x.titulo, lado(x)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "0.75em",
+      color: marcados[chave(x)] ? "var(--jade)" : "var(--tinta2)"
+    }
+  }, marcados[chave(x)] ? "Marcado: " + marcados[chave(x)] : texto(x)))))));
   return /*#__PURE__*/React.createElement(Folha, {
     titulo: "Localizar automaticamente",
     onFechar: onFechar
@@ -9075,77 +9434,87 @@ function ResultadoLocalizar({
     style: {
       fontWeight: 700
     }
-  }, r.achou, " de ", r.total, " locais agora estao no mapa"), /*#__PURE__*/React.createElement("div", {
+  }, r.achou, " de ", r.total, " eventos agora estao no mapa"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: "0.75em",
       color: "var(--tinta2)",
       marginTop: 3
     }
-  }, "So marquei sozinho quando havia um unico lugar com esse nome perto da cidade do evento.")), r.escolher.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, r.auto, " pela busca ", "\u00B7", " ", r.heranca, " pela hospedagem ou pelo contexto. So marquei sozinho quando o lugar era unico perto da cidade do evento.")), r.escolher.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "sec"
   }, /*#__PURE__*/React.createElement("h2", null, "Escolha o lugar certo"), /*#__PURE__*/React.createElement("div", {
     className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card"
-  }, r.escolher.map(x => /*#__PURE__*/React.createElement("button", {
-    key: x.id,
-    className: "item",
-    style: {
-      width: "100%",
-      textAlign: "left"
-    },
-    onClick: () => abrir(x.id)
-  }, /*#__PURE__*/React.createElement(Ico, {
-    n: "mapa",
-    tam: 16
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 600,
-      fontSize: "0.875em"
-    }
-  }, x.titulo), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "0.75em",
-      color: "var(--tinta2)"
-    }
-  }, x.n, " lugares com o nome \"", x.texto, "\"")))))), r.semAchar.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "sec"
-  }, /*#__PURE__*/React.createElement("h2", null, "Nao achei"), /*#__PURE__*/React.createElement("div", {
-    className: "risco"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card"
-  }, r.semAchar.map(x => /*#__PURE__*/React.createElement("button", {
-    key: x.id,
-    className: "item",
-    style: {
-      width: "100%",
-      textAlign: "left"
-    },
-    onClick: () => abrir(x.id)
-  }, /*#__PURE__*/React.createElement(Ico, {
-    n: "aviso",
-    tam: 16
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 600,
-      fontSize: "0.875em"
-    }
-  }, x.titulo), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "0.75em",
-      color: "var(--tinta2)"
-    }
-  }, "Procurei por \"", x.texto, "\". Abra e escreva o nome ou o endereco.")))))), /*#__PURE__*/React.createElement("button", {
+  })), r.escolher.map(x => {
+    const feito = marcados[chave(x)];
+    return /*#__PURE__*/React.createElement("div", {
+      key: chave(x),
+      className: "card pad",
+      style: {
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: "0.875em"
+      }
+    }, x.titulo, lado(x)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "0.7188em",
+        color: "var(--tinta3)",
+        margin: "2px 0 8px"
+      }
+    }, "Procurei por \"", x.texto, "\""), feito ? /*#__PURE__*/React.createElement("div", {
+      className: "fm-linha",
+      style: {
+        color: "var(--jade)",
+        marginTop: 0
+      }
+    }, /*#__PURE__*/React.createElement(Ico, {
+      n: "check",
+      tam: 14
+    }), " Marcado: ", feito) : /*#__PURE__*/React.createElement(React.Fragment, null, x.opcoes.map((o, i) => /*#__PURE__*/React.createElement("button", {
+      key: i,
+      className: "opc-lugar",
+      onClick: () => {
+        const dep = x.lado === "ponto" ? r.dependentes && r.dependentes[x.id] || [] : [];
+        // o mesmo lugar procurado em outro evento (Similan no passeio e no retorno) vale para os dois
+        const iguais = r.escolher.filter(y => y !== x && normLugar(y.texto) === normLugar(x.texto) && !marcados[chave(y)]);
+        onMarcar(x.id, x.lado, x.k, o, dep.concat(iguais.map(y => ({
+          id: y.id,
+          lado: y.lado,
+          k: y.k
+        }))));
+        setMarcados(m => {
+          const n = Object.assign({}, m, {
+            [chave(x)]: o.nome
+          });
+          iguais.forEach(y => {
+            n[chave(y)] = o.nome;
+          });
+          dep.forEach(dp => {
+            n[dp.id + "|" + dp.lado + "|" + (dp.k || 0)] = "herdou de " + x.titulo;
+          });
+          return n;
+        });
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "n"
+    }, o.nome, o.tipo ? /*#__PURE__*/React.createElement("span", {
+      className: "t"
+    }, " ", "\u00B7", " ", o.tipo) : null, o.aprox ? /*#__PURE__*/React.createElement("span", {
+      className: "ap"
+    }, "aproximado") : null), /*#__PURE__*/React.createElement("div", {
+      className: "d"
+    }, [o.detalhe, o.km != null ? (o.km < 10 ? o.km.toFixed(1).replace(".", ",") : Math.round(o.km)) + " km da cidade do evento" : ""].filter(Boolean).join(" \u00B7 ")))), /*#__PURE__*/React.createElement("button", {
+      className: "pend-link",
+      style: {
+        color: "var(--tinta2)",
+        fontWeight: 500,
+        marginTop: 4
+      },
+      onClick: () => abrir(x.id)
+    }, "Nenhum destes ", "\u00B7", " abrir o evento")));
+  })), secao("Falta informacao", r.falta, "aviso", x => x.motivo), secao("Sem lugar definido", r.conceito, "lapis", x => (x.motivo || "Descreve o que fazer, nao onde") + ". Se houver um lugar, abra e escreva o nome."), secao("Nao achei", r.semAchar, "aviso", x => "Procurei por \u201C" + x.texto + "\u201D" + (x.endereco ? " e pelo endereco" : "") + ". Abra e escreva o nome ou o endereco."), /*#__PURE__*/React.createElement("button", {
     className: "btn full",
     style: {
       marginTop: 14
@@ -9334,7 +9703,12 @@ function FolhaMapa({
     const urlRota = urlRotaEvento(e);
     return /*#__PURE__*/React.createElement("div", {
       className: "folha-mapa"
-    }, cab(t.k, (sel.n ? sel.n + ". " : "") + e.titulo, [t.n, "Dia " + numDia(e.dia), e.horaInicio ? fmtHora(i, e.tz) + (e.duracaoMin ? "\u2013" + fmtHora(f, e.tzFim != null ? e.tzFim : e.tz) : "") : ""].filter(Boolean).join(" \u00B7 ")), (e.localFim || e.localInicio || e.cidade) && /*#__PURE__*/React.createElement("div", {
+    }, cab(t.k, (sel.n ? sel.n + ". " : "") + e.titulo, [t.n, "Dia " + numDia(e.dia), e.horaInicio ? fmtHora(i, e.tz) + (e.duracaoMin ? "\u2013" + fmtHora(f, e.tzFim != null ? e.tzFim : e.tz) : "") : ""].filter(Boolean).join(" \u00B7 ")), (e.paradas || []).length > 1 && /*#__PURE__*/React.createElement("div", {
+      className: "fm-linha"
+    }, /*#__PURE__*/React.createElement(Ico, {
+      n: "mapa",
+      tam: 14
+    }), " Paradas: ", e.paradas.map((x, j) => (x.lat != null ? "" : "(sem ponto) ") + x.nome).join(" \u00B7 ")), (e.localFim || e.localInicio || e.cidade) && /*#__PURE__*/React.createElement("div", {
       className: "fm-linha"
     }, /*#__PURE__*/React.createElement(Ico, {
       n: "mapaPin",
@@ -9631,6 +10005,26 @@ function AbaMapa({
           n: k + 1
         }));
         pontos.push([pi.lat, pi.lng]);
+        // passeio com varias paradas: ponto principal + paradas (2a, 2b...), sem forcar um ponto so
+        const ps = (e.paradas || []).filter(x => x && x.lat != null);
+        if (ps.length > 1) {
+          add(L.polyline(ps.map(x => [x.lat, x.lng]), {
+            className: "linha-cx ape",
+            weight: 2
+          }));
+          ps.forEach((x, j) => {
+            if (j === 0 && Math.abs(x.lat - pi.lat) < 1e-6 && Math.abs(x.lng - pi.lng) < 1e-6) return;
+            const mp = add(L.marker([x.lat, x.lng], {
+              icon: icone('<div class="pin-parada">' + (k + 1) + String.fromCharCode(97 + j) + "</div>", 24, 24)
+            }));
+            mp.on("click", () => setSel({
+              tipo: "evento",
+              e: e,
+              n: k + 1
+            }));
+            pontos.push([x.lat, x.lng]);
+          });
+        }
         // trecho com saida e chegada: linha cheia e ponto de chegada
         if (pf && e.latIni != null && (pf.lat !== pi.lat || pf.lng !== pi.lng)) {
           add(L.polyline([[pi.lat, pi.lng], [pf.lat, pf.lng]], {
@@ -14133,56 +14527,124 @@ function App() {
       });
     },
     localizarTudo: async () => {
-      const alvo = dados.eventos.filter(e => precisaDePonto(e) && (nomeParaBusca(e) || e.cidade));
-      if (!alvo.length) return aviso("Todos os locais ja estao no mapa");
-      if (!confirm("Procurar " + alvo.length + " locais sem posicao? Leva cerca de " + Math.ceil(alvo.length * 2) + " segundos.")) return;
+      const alvoEv = dados.eventos.filter(e => precisaDePonto(e) || e.tipo === "transfer" && e.status !== "cancelado" && (e.latIni == null || e.lat == null) && (e.localInicio || e.localFim || e.titulo));
+      if (!alvoEv.length) return aviso("Todos os locais ja estao no mapa");
+      const planos = alvoEv.map(e => ({
+        e: e,
+        alvos: planejarLocal(e, dados.eventos)
+      }));
+      const nBusca = planos.reduce((s, p) => s + p.alvos.filter(a => a.modo === "busca").length, 0);
+      if (!confirm("Localizar " + alvoEv.length + " eventos sem posicao? Leva cerca de " + Math.max(5, Math.ceil(nBusca * 2.2)) + " segundos.")) return;
       const res = {
-        total: alvo.length,
+        total: alvoEv.length,
         feitos: 0,
         achou: 0,
+        auto: 0,
+        heranca: 0,
         escolher: [],
-        semAchar: []
+        conceito: [],
+        falta: [],
+        semAchar: [],
+        dependentes: {}
       };
       setLocalizando(Object.assign({}, res));
       const novos = {};
-      for (let i = 0; i < alvo.length; i++) {
-        const e = alvo[i];
-        const texto = nomeParaBusca(e) || e.cidade;
-        const l = await buscarLugares(texto, e.cidade).catch(() => []);
-        const r = escolherLugar(l);
-        if (r && r.ponto) {
-          novos[e.id] = {
-            lat: r.ponto.lat,
-            lng: r.ponto.lng
-          };
-          if (e.tipo === "transfer" && nomeParaBusca(e, "saida")) {
-            const s = escolherLugar(await buscarLugares(nomeParaBusca(e, "saida"), e.cidade).catch(() => []));
-            if (s && s.ponto) Object.assign(novos[e.id], {
-              latIni: s.ponto.lat,
-              lngIni: s.ponto.lng
-            });
+      const atual = id => novos[id] || dados.eventos.find(x => x.id === id);
+      const estado = {};
+      // 1a passada: tudo que e busca (hospedagens primeiro, para as heranças terem ponto)
+      const ordem = planos.slice().sort((a, b) => (b.e.tipo === "hotel") - (a.e.tipo === "hotel"));
+      for (const p of ordem) {
+        for (const a of p.alvos) {
+          if (a.modo !== "busca") continue;
+          // vinculo com hospedagem que ja tem ponto: e o mesmo lugar
+          const vh = a.vinculo && atual(a.vinculo);
+          if (vh && vh.lat != null) {
+            novos[p.e.id] = aplicarPonto(atual(p.e.id), a.lado, a.k, vh.lat, vh.lng, a.texto);
+            a.ok = "heranca";
+            continue;
           }
-          res.achou++;
-        } else if (r && r.opcoes) res.escolher.push({
-          id: e.id,
-          titulo: e.titulo,
-          texto: texto,
-          n: r.opcoes.length
-        });else res.semAchar.push({
-          id: e.id,
-          titulo: e.titulo,
-          texto: texto
-        });
-        res.feitos = i + 1;
-        setLocalizando(Object.assign({}, res));
-        await new Promise(r => setTimeout(r, 1100));
+          const r = await buscarAlvo(a, p.e.cidade);
+          if (r && r.ponto) {
+            novos[p.e.id] = aplicarPonto(atual(p.e.id), a.lado, a.k, r.ponto.lat, r.ponto.lng, a.texto);
+            a.ok = a.fonte === "contexto" ? "heranca" : "auto";
+          } else if (r && r.opcoes) a.opcoes = r.opcoes.slice(0, 4);else if (a.vinculo) a.esperaVinculo = true;
+          res.feitos++;
+          setLocalizando(Object.assign({}, res));
+          await new Promise(ok => setTimeout(ok, 1100));
+        }
       }
+      // 2a passada: heranças (hospedagem ativa, vinculo resolvido agora)
+      planos.forEach(p => p.alvos.forEach(a => {
+        const hid = a.modo === "heranca" ? a.herdaDe : a.esperaVinculo ? a.vinculo : null;
+        if (!hid) return;
+        const h = atual(hid);
+        if (h && h.lat != null) {
+          novos[p.e.id] = aplicarPonto(atual(p.e.id), a.lado, a.k, h.lat, h.lng, a.texto);
+          a.ok = "heranca";
+        } else {
+          a.modo = "faltaNome";
+          a.depende = hid;
+          a.motivo = a.esperaVinculo ? "E o mesmo lugar da hospedagem \u201C" + (h ? h.titulo : "") + "\u201D: quando ela tiver ponto, este herda" : "Herda da hospedagem \u201C" + (h ? h.titulo : "") + "\u201D, que ainda nao tem ponto";
+        }
+      }));
+      // resumo por evento
+      planos.forEach(p => {
+        const item = (a, extra) => Object.assign({
+          id: p.e.id,
+          titulo: p.e.titulo,
+          lado: a.lado,
+          k: a.k,
+          texto: a.exibe || a.texto
+        }, extra);
+        const pend = p.alvos.filter(a => !a.ok);
+        if (!pend.length && p.alvos.length) {
+          res.achou++;
+          if (p.alvos.some(a => a.ok === "heranca")) res.heranca++;else res.auto++;
+        }
+        pend.forEach(a => {
+          if (a.depende) (res.dependentes[a.depende] = res.dependentes[a.depende] || []).push({
+            id: p.e.id,
+            lado: a.lado,
+            k: a.k
+          });
+          if (a.opcoes) res.escolher.push(item(a, {
+            opcoes: a.opcoes
+          }));else if (a.modo === "conceito") res.conceito.push(item(a, {
+            motivo: a.motivo
+          }));else if (a.modo === "faltaNome") res.falta.push(item(a, {
+            motivo: a.motivo
+          }));else res.semAchar.push(item(a, {
+            endereco: a.endereco
+          }));
+        });
+      });
       if (Object.keys(novos).length) salvar(d => ({
         ...d,
-        eventos: d.eventos.map(e => novos[e.id] ? Object.assign({}, e, novos[e.id]) : e)
+        eventos: d.eventos.map(e => novos[e.id] ? Object.assign({}, e, {
+          lat: novos[e.id].lat,
+          lng: novos[e.id].lng,
+          latIni: novos[e.id].latIni,
+          lngIni: novos[e.id].lngIni,
+          paradas: novos[e.id].paradas || e.paradas,
+          pontoPelaParada: !!novos[e.id].pontoPelaParada
+        }) : e)
       }));
       setLocalizando(Object.assign({}, res, {
         fim: true
+      }));
+    },
+    // escolha feita na tela de resultado: grava o ponto no lado certo
+    // quem dependia dessa hospedagem (cafe da manha, check-out, retorno) herda junto
+    marcarPonto: (id, lado, k, x, dependentes) => {
+      salvar(d => ({
+        ...d,
+        eventos: d.eventos.map(e => {
+          let n = e.id === id ? aplicarPonto(e, lado, k, x.lat, x.lng, x.nome) : e;
+          (dependentes || []).filter(dp => dp.id === e.id).forEach(dp => {
+            n = aplicarPonto(n, dp.lado, dp.k, x.lat, x.lng);
+          });
+          return n;
+        })
       }));
     },
     novoDoMapa: x => {
@@ -14990,6 +15452,7 @@ function App() {
   }))), localizando && localizando.fim && /*#__PURE__*/React.createElement(ResultadoLocalizar, {
     r: localizando,
     dados: dados,
+    onMarcar: acoes.marcarPonto,
     onAbrir: e => {
       setLocalizando(null);
       acoes.editarEvento(e);
