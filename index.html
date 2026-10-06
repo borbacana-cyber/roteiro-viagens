@@ -909,6 +909,49 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .conexao .cx-tit{display:flex;align-items:center;gap:6px;font-weight:700;color:var(--tinta);margin-bottom:3px}
 .conexao.apertado .cx-tit{color:var(--ambar)}
 .conexao .cx-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.modos-mapa{display:flex;gap:4px;margin:10px 0 6px;background:var(--papel2);border:1px solid var(--linha);border-radius:99px;padding:3px}
+.modos-mapa button{flex:1;border:0;background:none;border-radius:99px;padding:8px 6px;font-weight:600;font-size:0.8125em;color:var(--tinta2)}
+.modos-mapa button.on{background:var(--cartao);color:var(--tinta);box-shadow:0 1px 3px rgba(13,13,13,.12)}
+.mapa-sub{font-size:0.75em;color:var(--tinta2);margin:0 2px 6px}
+.mapa-caixa{position:relative}
+.mapa-dica{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;background:var(--cartao);border:1px solid var(--linha);border-radius:99px;padding:6px 12px;font-size:0.75em;color:var(--tinta2);box-shadow:0 2px 8px rgba(13,13,13,.1);white-space:nowrap}
+.pin-n{position:relative;width:30px;height:30px;border-radius:99px;background:var(--cartao);border:2px solid var(--tinta);color:var(--tinta);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(13,13,13,.22);font-family:"Avenir Next",Avenir,Inter,sans-serif}
+.pin-n b{font-size:13px;font-weight:800;line-height:1}
+.pin-n i{position:absolute;right:-6px;bottom:-5px;width:17px;height:17px;border-radius:99px;background:var(--tinta);color:var(--papel);display:flex;align-items:center;justify-content:center;font-style:normal}
+.pin-n.atual{background:var(--tinta);color:var(--papel);transform:scale(1.18);box-shadow:0 0 0 5px rgba(201,168,107,.35),0 2px 6px rgba(13,13,13,.3)}
+.pin-n.atual i{background:var(--ouro)}
+.pin-n.proximo{border-color:var(--ouro);box-shadow:0 0 0 3px rgba(201,168,107,.28),0 2px 6px rgba(13,13,13,.2)}
+.pin-n.feito{opacity:.55}
+.pin-n.sel{transform:scale(1.22)}
+.pin-hotel{width:30px;height:30px;border-radius:9px;background:var(--cartao);border:1.5px solid var(--linha);color:var(--tinta2);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(13,13,13,.18)}
+.pin-chegada{width:12px;height:12px;border-radius:99px;background:var(--cartao);border:3px solid var(--tinta)}
+.rot-trecho{transform:translate(-50%,-50%);display:inline-block;white-space:nowrap;background:var(--cartao);border:1px solid var(--linha);border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:700;color:var(--tinta2);box-shadow:0 1px 3px rgba(13,13,13,.12);font-family:"Avenir Next",Avenir,Inter,sans-serif}
+.rot-trecho.apertado{color:var(--ambar);border-color:var(--ambar)}
+.rot-trecho.falta{color:var(--azul);border-color:var(--azul)}
+.linha-cx{stroke:var(--tinta2);stroke-opacity:.55;stroke-dasharray:2 7;stroke-linecap:round}
+.linha-cx.apertado{stroke:var(--ambar);stroke-opacity:.9}
+.linha-cx.falta{stroke:var(--azul);stroke-opacity:.8}
+.linha-trecho{stroke:var(--tinta);stroke-opacity:.7}
+.linha-macro{stroke:var(--ouro);stroke-opacity:.85;stroke-dasharray:6 7}
+.pin-cidade{transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;background:var(--cartao);border:1.5px solid var(--tinta);border-radius:99px;padding:4px 10px 4px 4px;font-size:12px;font-weight:600;color:var(--tinta);box-shadow:0 2px 6px rgba(13,13,13,.2);font-family:"Avenir Next",Avenir,Inter,sans-serif}
+.pin-cidade b{background:var(--tinta);color:var(--papel);border-radius:99px;padding:2px 7px;font-size:10.5px;font-weight:800}
+.pin-cidade.ini b{background:var(--jade)}
+.pin-cidade.fim b{background:var(--ouro)}
+.pin-cidade.sel{transform:translate(-50%,-50%) scale(1.12)}
+.pin-visto{width:10px;height:10px;border-radius:99px;background:var(--jade);border:2px solid var(--cartao)}
+.pin-grupo{width:34px;height:34px;border-radius:99px;background:var(--tinta);color:var(--papel);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;border:3px solid var(--cartao);box-shadow:0 2px 6px rgba(13,13,13,.25)}
+.pin-lugar.sel{width:22px;height:22px;border-width:5px;border-color:var(--tinta)}
+.folha-mapa{position:absolute;left:8px;right:8px;bottom:8px;z-index:600;background:var(--cartao);border-radius:16px;padding:14px 14px 12px;box-shadow:0 8px 28px rgba(13,13,13,.22);border:1px solid var(--linha);animation:sobe .18s ease-out}
+@keyframes sobe{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
+.fm-cab{display:flex;gap:10px;align-items:flex-start}
+.fm-ic{width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:var(--papel2);display:flex;align-items:center;justify-content:center}
+.fm-tit{font-weight:700;font-size:0.9375em;line-height:1.25}
+.fm-sub{font-size:0.75em;color:var(--tinta2);margin-top:2px}
+.fm-x{background:none;border:0;color:var(--tinta3);font-size:15px;padding:2px 4px}
+.fm-linha{display:flex;gap:7px;align-items:flex-start;font-size:0.7812em;color:var(--tinta2);margin-top:9px;line-height:1.4}
+.fm-linha.ambar{color:var(--ambar)}
+.fm-acoes{display:flex;gap:8px;margin-top:12px}
+.fm-acoes .btn{flex:1;font-size:0.8125em;padding:10px 8px;min-height:44px;display:flex;align-items:center;justify-content:center}
 .grupo{border:1px solid var(--linha);border-radius:12px;background:var(--cartao);margin-bottom:10px}
 .grupo-cab{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;background:none;border:0;text-align:left;font-weight:600;font-size:0.875em;color:var(--tinta)}
 .grupo-cab .t{flex:0 0 auto}
@@ -1359,7 +1402,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 22:07"
+  versao: "2026-10-05 22:37"
 };
 
 /* ============================================================
@@ -9022,6 +9065,261 @@ function ResultadoLocalizar({
     onClick: onFechar
   }, "Fechar"));
 }
+/* ============================================================
+   MAPA: base cartografica, modos Hoje / Viagem inteira / Explorar
+   ============================================================ */
+// Provedor da base num lugar so. Stadia Alidade Smooth (raster, Leaflet). Na web a Stadia
+// autentica pelo dominio cadastrado no painel; a chave so e necessaria fora dele.
+const MAPA_BASE = Object.assign({
+  provedor: "stadia",
+  estilo: "alidade_smooth",
+  chave: ""
+}, typeof CONFIG !== "undefined" && CONFIG.mapa || {});
+function criarCamadaBase(m) {
+  const reserva = [{
+    url: "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
+    attr: "Wikimedia | &copy; OpenStreetMap"
+  }, {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attr: "&copy; OpenStreetMap"
+  }];
+  const opcoes = MAPA_BASE.provedor === "stadia" ? [{
+    url: "https://tiles.stadiamaps.com/tiles/" + MAPA_BASE.estilo + "/{z}/{x}/{y}{r}.png" + (MAPA_BASE.chave ? "?api_key=" + MAPA_BASE.chave : ""),
+    attr: "&copy; <a href=\"https://stadiamaps.com/\" target=\"_blank\">Stadia Maps</a> &copy; <a href=\"https://openmaptiles.org/\" target=\"_blank\">OpenMapTiles</a> &copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">OpenStreetMap</a>"
+  }].concat(reserva) : reserva;
+  let i = 0,
+    falhas = 0,
+    camada = null;
+  const usar = () => {
+    if (camada) m.removeLayer(camada);
+    falhas = 0;
+    const o = opcoes[i];
+    camada = L.tileLayer(o.url, {
+      maxZoom: 19,
+      attribution: o.attr
+    });
+    // se a base nao carregar (dominio nao cadastrado, fora do ar), cai para a proxima
+    camada.on("tileerror", () => {
+      falhas++;
+      if (falhas === 6 && i < opcoes.length - 1) {
+        i++;
+        usar();
+      }
+    });
+    camada.addTo(m);
+    m._base = {
+      provedor: i === 0 ? MAPA_BASE.provedor : "reserva",
+      url: o.url
+    };
+  };
+  usar();
+  return camada;
+}
+const svgIco = (n, t) => '<svg width="' + t + '" height="' + t + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' + (CAMINHOS[n] || "") + '"/></svg>';
+// dia que o modo Hoje mostra: hoje, senao o proximo dia com eventos, senao o primeiro
+function diaDoMapa(eventos, hojeIso) {
+  const datas = [...new Set((eventos || []).filter(e => e.data && e.status !== "cancelado").map(e => e.data))].sort();
+  if (!datas.length) return null;
+  return datas.find(d => d === hojeIso) || datas.find(d => d > hojeIso) || datas[0];
+}
+// paradas da viagem: uma por cidade, juntando dias seguidos na mesma cidade
+function paradasDaViagem(eventos) {
+  const porData = {};
+  (eventos || []).filter(e => e.status !== "cancelado" && e.data && e.lat != null && !e.saidaDe).forEach(e => (porData[e.data] = porData[e.data] || []).push(e));
+  const paradas = [];
+  Object.keys(porData).sort().forEach(d => {
+    const itens = porData[d];
+    const cid = cidadeDoDia(itens) || itens[0].cidade || "";
+    const daCidade = itens.filter(e => e.cidade === cid);
+    const base = daCidade.length ? daCidade : itens;
+    const lat = base.reduce((s, e) => s + e.lat, 0) / base.length,
+      lng = base.reduce((s, e) => s + e.lng, 0) / base.length;
+    const ult = paradas[paradas.length - 1];
+    if (ult && semAcento(ult.cidade).toLowerCase() === semAcento(cid).toLowerCase()) {
+      ult.diaFim = itens[0].dia;
+      ult.dataFim = d;
+      ult.n += base.length;
+    } else paradas.push({
+      cidade: cid,
+      diaIni: itens[0].dia,
+      diaFim: itens[0].dia,
+      dataIni: d,
+      dataFim: d,
+      lat: lat,
+      lng: lng,
+      n: base.length
+    });
+  });
+  return paradas;
+}
+// agrupamento simples por grade de pixels (sem biblioteca): perto demais vira um grupo
+function agruparPontos(pontos, projetar, px) {
+  const grade = {};
+  (pontos || []).forEach(x => {
+    const p = projetar(x);
+    const k = Math.floor(p.x / px) + ":" + Math.floor(p.y / px);
+    (grade[k] = grade[k] || []).push(x);
+  });
+  return Object.keys(grade).map(k => {
+    const itens = grade[k];
+    return {
+      itens: itens,
+      lat: itens.reduce((s, x) => s + x.lat, 0) / itens.length,
+      lng: itens.reduce((s, x) => s + x.lng, 0) / itens.length
+    };
+  });
+}
+const rotuloDias = p => "D" + numDia(p.diaIni) + (p.diaFim !== p.diaIni ? "\u2013" + numDia(p.diaFim) : "");
+// proximo evento com ponto a partir de agora (para "distancia do proximo evento")
+function proximoComPonto(eventos, agora) {
+  return (eventos || []).filter(e => !e.fundo && e.status !== "cancelado" && e.horaInicio && pontoIni(e) && inicioAbs(e) > agora).sort((a, b) => inicioAbs(a) - inicioAbs(b))[0] || null;
+}
+// Bottom sheet do mapa: evento do roteiro, cidade da viagem ou lugar do Explorar
+function FolhaMapa({
+  sel,
+  dados,
+  agora,
+  acoes,
+  explorar,
+  vistos,
+  onVisto,
+  onFechar,
+  onAproximar
+}) {
+  if (!sel) return null;
+  const cab = (ic, titulo, sub) => /*#__PURE__*/React.createElement("div", {
+    className: "fm-cab"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "fm-ic"
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: ic,
+    tam: 18
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fm-tit"
+  }, titulo), sub && /*#__PURE__*/React.createElement("div", {
+    className: "fm-sub"
+  }, sub)), /*#__PURE__*/React.createElement("button", {
+    className: "fm-x",
+    "aria-label": "Fechar",
+    onClick: onFechar
+  }, "\u2715"));
+  if (sel.tipo === "evento") {
+    const e = sel.e;
+    const t = TIPOS[e.tipo] || TIPOS.livre;
+    const i = inicioAbs(e),
+      f = fimAbs(e);
+    const doDia = dados.eventos.filter(x => x.data === e.data);
+    const c = conexoesDoDia(doDia, dados.ignorados)[e.id];
+    const p = pontoIni(e) || pontoFim(e);
+    const hojeIso = new Date(agora + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "folha-mapa"
+    }, cab(t.k, (sel.n ? sel.n + ". " : "") + e.titulo, [t.n, "Dia " + numDia(e.dia), e.horaInicio ? fmtHora(i, e.tz) + (e.duracaoMin ? "\u2013" + fmtHora(f, e.tzFim != null ? e.tzFim : e.tz) : "") : ""].filter(Boolean).join(" \u00B7 ")), (e.localFim || e.localInicio || e.cidade) && /*#__PURE__*/React.createElement("div", {
+      className: "fm-linha"
+    }, /*#__PURE__*/React.createElement(Ico, {
+      n: "mapaPin",
+      tam: 14
+    }), " ", [e.localInicio && e.localFim ? e.localInicio + " \u2192 " + e.localFim : e.localFim || e.localInicio, e.cidade].filter(Boolean).join(" \u00B7 ")), c && /*#__PURE__*/React.createElement("div", {
+      className: "fm-linha" + (c.tipo === "apertado" ? " ambar" : "")
+    }, /*#__PURE__*/React.createElement(Ico, {
+      n: c.tipo === "apertado" ? "relogio" : c.tipo === "ape" ? "pessoa" : "transfer",
+      tam: 14
+    }), " ", c.tipo === "apertado" || c.tipo === "semTransporte" ? textoConexao(c) : "Ate " + c.b.titulo + ": " + textoConexao(c)), /*#__PURE__*/React.createElement("div", {
+      className: "fm-acoes"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn",
+      onClick: () => acoes.abrirEvento(e)
+    }, "Ver evento"), p && /*#__PURE__*/React.createElement("a", {
+      className: "btn sec",
+      style: {
+        textDecoration: "none",
+        textAlign: "center"
+      },
+      href: "https://www.google.com/maps/dir/?api=1&destination=" + p.lat + "," + p.lng,
+      target: "_blank",
+      rel: "noopener"
+    }, "Ver rota"), e.data === hojeIso && /*#__PURE__*/React.createElement("button", {
+      className: "btn sec",
+      onClick: () => acoes.irPara("agora")
+    }, "Agora")));
+  }
+  if (sel.tipo === "cidade") {
+    const p = sel.p;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "folha-mapa"
+    }, cab("mapaPin", p.cidade || "Sem cidade", rotuloDias(p) + " \u00B7 " + dataCurtaSemana(p.dataIni) + (p.dataFim !== p.dataIni ? " a " + dataCurtaSemana(p.dataFim) : "") + " \u00B7 " + p.n + " local" + (p.n > 1 ? "is" : "") + " no mapa"), /*#__PURE__*/React.createElement("div", {
+      className: "fm-acoes"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn",
+      onClick: () => onAproximar(p)
+    }, "Ver esses dias")));
+  }
+  const x = sel.x;
+  const g = NO_MAPA[explorar] || {};
+  const detalhe = [x.estrelas ? x.estrelas + " estrelas" : "", x.cozinha ? x.cozinha.replace(/[;_]/g, " ") : ""].filter(Boolean).join(" \u00B7 ");
+  const regiao = cidadePerto(x.lat, x.lng, dados);
+  const prox = proximoComPonto(dados.eventos, agora);
+  const pp = prox && pontoIni(prox);
+  const tr = pp ? estimarTrajeto(distanciaKm(x.lat, x.lng, pp.lat, pp.lng)) : null;
+  // cabe no roteiro? janela livre de 1h30 no dia do mapa, ja contando a ida
+  const data = diaDoMapa(dados.eventos, new Date(agora + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10));
+  const tzD = data ? fusoDoDia(dados.eventos.filter(e => e.data === data), data, dados.eventos) : 0;
+  const ag = data ? agendaDoDia(dados.eventos, data, tzD, null) : null;
+  const precisa = 90 + (tr ? tr.min : 20);
+  // hoje so vale o que ainda nao passou
+  const livres = ag ? ag.livres.map(l => ({
+    a: Math.max(l.a, agora),
+    b: l.b
+  })).filter(l => l.b > l.a) : [];
+  const vaga = livres.find(l => (l.b - l.a) / 60000 >= precisa) || null;
+  const link = linkDoLugar(x, explorar, dados);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "folha-mapa"
+  }, cab(g.tipo === "hotel" ? "hotel" : g.tipo === "refeicao" ? "refeicao" : g.tipo === "compras" ? "compras" : "passeio", x.nome, [g.n, detalhe, regiao].filter(Boolean).join(" \u00B7 ")), tr && /*#__PURE__*/React.createElement("div", {
+    className: "fm-linha"
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "transfer",
+    tam: 14
+  }), " ~", durCurta(tr.min), " ", tr.modo, " do proximo evento (", prox.titulo, ", ", fmtHora(inicioAbs(prox), prox.tz), ")"), ag && /*#__PURE__*/React.createElement("div", {
+    className: "fm-linha" + (vaga ? "" : " ambar")
+  }, /*#__PURE__*/React.createElement(Ico, {
+    n: "relogio",
+    tam: 14
+  }), " ", vaga ? "Cabe em " + dataCurtaSemana(data) + ": " + fmtHora(vaga.a, tzD) + "\u2013" + (vaga.b >= ag.fim ? "24:00" : fmtHora(vaga.b, tzD)) + " livre" : dataCurtaSemana(data) + " nao tem " + durCurta(precisa) + " livres (visita + ida)"), /*#__PURE__*/React.createElement("div", {
+    className: "fm-acoes"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    onClick: () => acoes.novoDoMapa({
+      titulo: x.nome,
+      tipo: g.tipo || "passeio",
+      lat: x.lat,
+      lng: x.lng
+    })
+  }, "Adicionar ao roteiro"), link && /*#__PURE__*/React.createElement("a", {
+    className: "btn sec",
+    style: {
+      textDecoration: "none",
+      textAlign: "center"
+    },
+    href: link.url,
+    target: "_blank",
+    rel: "noopener",
+    onClick: () => onVisto(x.id, true)
+  }, "Ver detalhes")), /*#__PURE__*/React.createElement("button", {
+    className: "pend-link",
+    style: {
+      color: "var(--tinta3)",
+      marginTop: 8,
+      fontWeight: 500
+    },
+    onClick: () => onVisto(x.id, !vistos[x.id])
+  }, vistos[x.id] ? "Marcado como ja visto \u00B7 desmarcar" : "Marcar como ja visto"));
+}
 function AbaMapa({
   dados,
   acoes,
@@ -9035,6 +9333,12 @@ function AbaMapa({
     mapRef = useRef(null),
     exploraRef = useRef([]);
   const [explorar, setExplorar] = useState(null);
+  const [sel, setSel] = useState(null);
+  const [modo, setModo] = useState(() => {
+    const h = new Date(Date.now() + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
+    return dados.eventos.some(e => e.data === h && e.lat != null) ? "hoje" : "viagem";
+  });
+  const agoraMapa = Date.now();
   const [buscando, setBuscando] = useState(false);
   const [achados, setAchados] = useState([]);
   const [vistos, setVistos] = useState(() => {
@@ -9070,24 +9374,6 @@ function AbaMapa({
     try {
       const lista = await buscarNaArea(m.getBounds(), chave);
       const g = NO_MAPA[chave];
-      lista.forEach(x => {
-        const detalhe = [x.estrelas ? x.estrelas + " estrelas" : "", x.cozinha ? x.cozinha.replace(/[;_]/g, " ") : ""].filter(Boolean).join(" \u00B7 ");
-        const acao = linkDoLugar(x, chave, dados);
-        const visto = !!vistosRef.current[x.id];
-        const html = '<div class="pop-lugar"><b>' + x.nome + "</b>" + (detalhe ? "<br><span>" + detalhe + "</span>" : "") + (x.fone ? '<br><a href="tel:' + x.fone + '">' + x.fone + "</a>" : "") + (x.site ? '<br><a href="' + x.site + '" target="_blank" rel="noopener">site oficial</a>' : "") + '<div class="pop-acoes">' + '<a class="btn-buscar" href="' + acao.url + '" target="_blank" rel="noopener sponsored">' + acao.nome + '</a>' + '<button class="btn-add" data-nome="' + encodeURIComponent(x.nome) + '" data-lat="' + x.lat + '" data-lng="' + x.lng + '" data-tipo="' + g.tipo + '">Adicionar</button>' + '</div>' + '<label class="marcar"><input type="checkbox" class="chk-visto" data-id="' + x.id + '"' + (visto ? " checked" : "") + '> Ja olhei este</label>' + '</div>';
-        const mk = L.marker([x.lat, x.lng], {
-          icon: L.divIcon({
-            className: "",
-            html: '<div class="pin-lugar' + (visto ? " visto" : "") + '"></div>',
-            iconSize: [14, 14],
-            iconAnchor: [7, 7]
-          })
-        }).bindPopup(html);
-        mk._idLugar = x.id;
-        mk._nome = x.nome;
-        mk.addTo(m);
-        exploraRef.current.push(mk);
-      });
       setAchados(lista);
       if (!lista.length) acoes.avisar("Nada encontrado nesta area. Aproxime ou mova o mapa.");
     } catch (e) {
@@ -9109,7 +9395,10 @@ function AbaMapa({
       }
       m.invalidateSize();
       if (foco.lat != null) m.setView([foco.lat, foco.lng], 15);
-      if (foco.buscar) setTimeout(() => procurar(foco.buscar), 600);
+      if (foco.buscar) {
+        setModo("explorar");
+        setTimeout(() => procurar(foco.buscar), 600);
+      }
       limparFoco && limparFoco();
     };
     setTimeout(tentar, 300);
@@ -9161,121 +9450,205 @@ function AbaMapa({
       attributionControl: false
     }).setView([13.7563, 100.5018], 4);
     // osm-intl usa nomes internacionais no alfabeto latino, em vez do idioma local
-    const camadaBase = L.tileLayer("https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "Wikimedia | OpenStreetMap"
-    });
-    let falhas = 0;
-    camadaBase.on("tileerror", () => {
-      falhas++;
-      if (falhas === 6 && !m._trocou) {
-        m._trocou = true;
-        m.removeLayer(camadaBase);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19
-        }).addTo(m);
-      }
-    });
-    camadaBase.addTo(m);
+    criarCamadaBase(m);
+    L.control.attribution({
+      prefix: false
+    }).addTo(m);
     mapRef.current = m;
   }, []);
+  // camadas do roteiro conforme o modo
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
     (m._camada || []).forEach(l => m.removeLayer(l));
     const camada = [],
       pontos = [];
-    dados.checkins.forEach((c, idx) => {
-      if (!c.lat) return;
-      pontos.push([c.lat, c.lng]);
-      const evC = dados.eventos.find(x => x.id === c.eventoId);
-      const diaC = evC ? numDia(evC.dia) : null;
-      const mk = L.marker([c.lat, c.lng], {
-        icon: L.divIcon({
-          className: "",
-          html: '<div class="pin-dia visitado">' + (diaC ? "D" + diaC : "\u2713") + '</div>',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
-        })
-      }).bindPopup("<b>" + (c.titulo || "Ponto") + "</b><br>" + new Date(c.at).toLocaleString("pt-BR"));
-      mk.addTo(m);
-      camada.push(mk);
-    });
-    if (pontos.length > 1) {
-      const l = L.polyline(pontos, {
-        color: "#C9A86B",
-        weight: 2,
-        dashArray: "5,6",
-        opacity: .8
-      }).addTo(m);
+    const add = l => {
+      l.addTo(m);
       camada.push(l);
-    }
-    dados.eventos.forEach(e => {
-      if (e.latIni != null) {
-        const ms = L.marker([e.latIni, e.lngIni], {
-          icon: L.divIcon({
-            className: "",
-            html: '<div class="pin-dia saida">D' + numDia(e.dia) + '</div>',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-          })
-        }).bindPopup("<b>Saida: " + (e.localInicio || e.titulo) + "</b><br>" + e.titulo + (e.horaInicio ? " \u00B7 " + e.horaInicio : ""));
-        ms.addTo(m);
-        camada.push(ms);
-        pontos.push([e.latIni, e.lngIni]);
-      }
-      if (e.lat == null) return;
-      const mk = L.marker([e.lat, e.lng], {
-        icon: L.divIcon({
-          className: "",
-          html: '<div class="pin-dia">D' + numDia(e.dia) + '</div>',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
-        })
-      }).bindPopup("<b>" + e.titulo + "</b><br>Dia " + numDia(e.dia) + (e.horaInicio ? " \u00B7 " + e.horaInicio : "") + (e.cidade ? "<br>" + e.cidade : ""));
-      mk.addTo(m);
-      camada.push(mk);
-      pontos.push([e.lat, e.lng]);
-    });
-    if (posFamilia && posFamilia.lat) {
-      const mk = L.marker([posFamilia.lat, posFamilia.lng], {
-        icon: L.divIcon({
-          className: "",
-          html: '<div class="pin-dia familia"></div>',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8]
-        })
-      }).bindPopup("Posicao atual");
-      mk.addTo(m);
-      camada.push(mk);
-      pontos.push([posFamilia.lat, posFamilia.lng]);
-    }
-    const rota = dados.eventos.slice().sort(porDataHora).reduce((l, e) => {
-      if (e.latIni != null) l.push([e.latIni, e.lngIni]);
-      if (e.lat != null) l.push([e.lat, e.lng]);
       return l;
-    }, []);
-    if (rota.length > 1) {
-      const l = L.polyline(rota, {
-        color: "var(--ambar)",
-        weight: 2,
-        opacity: .45
-      }).addTo(m);
-      camada.push(l);
+    };
+    const icone = (html, w, h) => L.divIcon({
+      className: "",
+      html: html,
+      iconSize: w ? [w, h] : null,
+      iconAnchor: w ? [w / 2, h / 2] : [0, 0]
+    });
+    const hojeIso = new Date(agoraMapa + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
+    if (modo === "hoje") {
+      const data = diaDoMapa(dados.eventos, hojeIso);
+      const doDia = dados.eventos.filter(e => e.data === data && e.status !== "cancelado");
+      const seq = doDia.filter(e => !e.fundo && e.horaInicio && (pontoIni(e) || pontoFim(e))).sort((a, b) => inicioAbs(a) - inicioAbs(b));
+      const atual = seq.find(e => agoraMapa >= inicioAbs(e) && agoraMapa < fimAbs(e));
+      const proximo = seq.find(e => inicioAbs(e) > agoraMapa);
+      // onde dorme / acorda: hotel sem numero
+      [noiteDoDia(data, dados.eventos), noiteDoDia(new Date(Date.parse(data + "T00:00:00Z") - 86400000).toISOString().slice(0, 10), dados.eventos)].forEach(nt => {
+        if (!nt || !nt.hotel || nt.hotel.lat == null || camada.some(l => l._hotel === nt.hotel.id)) return;
+        const mk = add(L.marker([nt.hotel.lat, nt.hotel.lng], {
+          icon: icone('<div class="pin-hotel">' + svgIco("hotel", 15) + "</div>", 30, 30)
+        }));
+        mk._hotel = nt.hotel.id;
+        mk.on("click", () => setSel({
+          tipo: "evento",
+          e: nt.hotel
+        }));
+        pontos.push([nt.hotel.lat, nt.hotel.lng]);
+      });
+      seq.forEach((e, k) => {
+        const t = TIPOS[e.tipo] || TIPOS.livre;
+        const pi = pontoIni(e) || pontoFim(e),
+          pf = pontoFim(e);
+        const cls = "pin-n" + (e === atual ? " atual" : e === proximo ? " proximo" : "") + (e.status === "concluido" || fimAbs(e) < agoraMapa ? " feito" : "") + (sel && sel.e && sel.e.id === e.id ? " sel" : "");
+        const mk = add(L.marker([pi.lat, pi.lng], {
+          icon: icone('<div class="' + cls + '"><b>' + (k + 1) + "</b><i>" + svgIco(t.k, 11) + "</i></div>", 30, 30),
+          zIndexOffset: e === atual ? 900 : e === proximo ? 800 : 0
+        }));
+        mk._ev = e.id;
+        mk.on("click", () => setSel({
+          tipo: "evento",
+          e: e,
+          n: k + 1
+        }));
+        pontos.push([pi.lat, pi.lng]);
+        // trecho com saida e chegada: linha cheia e ponto de chegada
+        if (pf && e.latIni != null && (pf.lat !== pi.lat || pf.lng !== pi.lng)) {
+          add(L.polyline([[pi.lat, pi.lng], [pf.lat, pf.lng]], {
+            className: "linha-trecho",
+            weight: 3
+          }));
+          add(L.marker([pf.lat, pf.lng], {
+            icon: icone('<div class="pin-chegada"></div>', 12, 12),
+            interactive: false
+          }));
+          pontos.push([pf.lat, pf.lng]);
+        }
+      });
+      // ligacoes entre eventos com tempo estimado (mesmo calculo do assistente de conexao)
+      const cx = conexoesDoDia(doDia, dados.ignorados);
+      Object.values(cx).forEach(c => {
+        const a = pontoFim(c.a),
+          b = pontoIni(c.b);
+        const cls = c.tipo === "apertado" ? "apertado" : c.tipo === "semTransporte" ? "falta" : c.tipo;
+        add(L.polyline([[a.lat, a.lng], [b.lat, b.lng]], {
+          className: "linha-cx " + cls,
+          weight: 3
+        }));
+        const txt = durCurta(c.min) + " " + (c.modo === "a pe" ? "a pe" : "de carro") + (c.tipo === "apertado" ? " \u00B7 apertado" : "");
+        // trecho muito curto: o rotulo cobriria os marcadores; o tempo fica no card
+        if (m.distance([a.lat, a.lng], [b.lat, b.lng]) < 250 && c.tipo !== "apertado") return;
+        add(L.marker([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2], {
+          icon: icone('<div class="rot-trecho ' + cls + '">' + txt + "</div>"),
+          interactive: false
+        }));
+      });
+      m._diaMapa = data;
+    } else if (modo === "viagem") {
+      const paradas = paradasDaViagem(dados.eventos);
+      if (paradas.length > 1) add(L.polyline(paradas.map(p => [p.lat, p.lng]), {
+        className: "linha-macro",
+        weight: 2
+      }));
+      paradas.forEach((p, k) => {
+        const cls = "pin-cidade" + (k === 0 ? " ini" : k === paradas.length - 1 ? " fim" : "") + (sel && sel.p && sel.p.dataIni === p.dataIni ? " sel" : "");
+        const mk = add(L.marker([p.lat, p.lng], {
+          icon: icone('<div class="' + cls + '"><b>' + rotuloDias(p) + "</b> " + (p.cidade || "") + "</div>")
+        }));
+        mk.on("click", () => setSel({
+          tipo: "cidade",
+          p: p
+        }));
+        pontos.push([p.lat, p.lng]);
+      });
+      // lugares visitados (check-ins) continuam no mapa da viagem
+      dados.checkins.forEach(c => {
+        if (!c.lat) return;
+        add(L.marker([c.lat, c.lng], {
+          icon: icone('<div class="pin-visto"></div>', 10, 10)
+        }).bindPopup("<b>" + (c.titulo || "Ponto") + "</b><br>" + new Date(c.at).toLocaleString("pt-BR")));
+      });
+    }
+    if (posFamilia && posFamilia.lat) {
+      add(L.marker([posFamilia.lat, posFamilia.lng], {
+        icon: icone('<div class="pin-dia familia"></div>', 16, 16),
+        zIndexOffset: 1000
+      }).bindPopup("Posicao atual"));
+      if (modo !== "explorar") pontos.push([posFamilia.lat, posFamilia.lng]);
     }
     m._camada = camada;
-    if (pontos.length) m.fitBounds(pontos, {
-      padding: [40, 40],
-      maxZoom: 13
+    // so reenquadra quando muda o modo ou o roteiro, nao ao tocar num ponto
+    const chave = modo + "|" + dados.eventos.length + "|" + (m._diaMapa || "");
+    if (pontos.length && modo !== "explorar" && m._enquadre !== chave) m.fitBounds(pontos, {
+      padding: [44, 44],
+      maxZoom: modo === "hoje" ? 16 : 9
     });
-  }, [dados.checkins, dados.eventos, posFamilia]);
+    m._enquadre = chave;
+  }, [dados.checkins, dados.eventos, posFamilia, modo, sel]);
+  // lugares do Explorar, agrupados quando ficam perto demais na tela
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    const desenhar = () => {
+      exploraRef.current.forEach(l => m.removeLayer(l));
+      exploraRef.current = [];
+      if (modo !== "explorar" || !explorar) return;
+      agruparPontos(achados, x => m.latLngToLayerPoint([x.lat, x.lng]), 46).forEach(g => {
+        if (g.itens.length > 1) {
+          const mk = L.marker([g.lat, g.lng], {
+            icon: L.divIcon({
+              className: "",
+              html: '<div class="pin-grupo">' + g.itens.length + "</div>",
+              iconSize: [34, 34],
+              iconAnchor: [17, 17]
+            })
+          });
+          mk.on("click", () => m.setView([g.lat, g.lng], Math.min(m.getZoom() + 2, 18)));
+          mk.addTo(m);
+          exploraRef.current.push(mk);
+          return;
+        }
+        const x = g.itens[0];
+        const marcado = sel && sel.x && String(sel.x.id) === String(x.id);
+        const mk = L.marker([x.lat, x.lng], {
+          icon: L.divIcon({
+            className: "",
+            html: '<div class="pin-lugar' + (vistos[x.id] ? " visto" : "") + (marcado ? " sel" : "") + '"></div>',
+            iconSize: marcado ? [22, 22] : [14, 14],
+            iconAnchor: marcado ? [11, 11] : [7, 7]
+          }),
+          zIndexOffset: marcado ? 900 : 0
+        });
+        mk._idLugar = x.id;
+        mk._nome = x.nome;
+        mk.on("click", () => setSel({
+          tipo: "lugar",
+          x: x
+        }));
+        mk.addTo(m);
+        exploraRef.current.push(mk);
+      });
+    };
+    desenhar();
+    m.on("zoomend", desenhar);
+    return () => m.off("zoomend", desenhar);
+  }, [achados, explorar, modo, sel, vistos]);
   const linkFamilia = location.origin + location.pathname + "#familia?v=" + VIAGEM_ATUAL;
   return /*#__PURE__*/React.createElement("div", {
     className: "wrap"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "modos-mapa"
+  }, [["hoje", "Hoje"], ["viagem", "Viagem inteira"], ["explorar", "Explorar"]].map(([k, t]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    className: modo === k ? "on" : "",
+    onClick: () => {
+      setSel(null);
+      setModo(k);
+    }
+  }, t))), modo === "hoje" && mapRef.current && mapRef.current._diaMapa && /*#__PURE__*/React.createElement("div", {
+    className: "mapa-sub"
+  }, "Dia ", numDia((dados.eventos.find(e => e.data === mapRef.current._diaMapa) || {}).dia || 0), " \u00B7 ", dataCurtaSemana(mapRef.current._diaMapa), mapRef.current._diaMapa !== new Date(agoraMapa + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10) ? " (proximo dia com eventos)" : ""), modo === "explorar" && /*#__PURE__*/React.createElement("div", {
     className: "filtros",
     style: {
-      marginTop: 10,
+      marginTop: 8,
       marginBottom: 8
     }
   }, Object.keys(NO_MAPA).map(k => /*#__PURE__*/React.createElement("button", {
@@ -9294,9 +9667,33 @@ function AbaMapa({
       borderStyle: "dashed"
     }
   }, "procurando...")), /*#__PURE__*/React.createElement("div", {
+    className: "mapa-caixa"
+  }, /*#__PURE__*/React.createElement("div", {
     id: "mapa",
     ref: ref
-  }), (() => {
+  }), modo === "explorar" && !explorar && /*#__PURE__*/React.createElement("div", {
+    className: "mapa-dica"
+  }, "Escolha o que procurar nesta area"), /*#__PURE__*/React.createElement(FolhaMapa, {
+    sel: sel,
+    dados: dados,
+    agora: agoraMapa,
+    acoes: acoes,
+    explorar: explorar,
+    vistos: vistos,
+    onVisto: (id, v) => setVistos(o => Object.assign({}, o, {
+      [id]: v
+    })),
+    onFechar: () => setSel(null),
+    onAproximar: p => {
+      setSel(null);
+      const m = mapRef.current;
+      const pts = dados.eventos.filter(e => e.lat != null && e.data >= p.dataIni && e.data <= p.dataFim).map(e => [e.lat, e.lng]);
+      if (m && pts.length) m.fitBounds(pts, {
+        padding: [44, 44],
+        maxZoom: 15
+      });
+    }
+  })), (() => {
     const semPonto = dados.eventos.filter(precisaDePonto);
     if (!semPonto.length) return null;
     return /*#__PURE__*/React.createElement("div", {
@@ -9404,8 +9801,10 @@ function AbaMapa({
         const m = mapRef.current;
         if (!m) return;
         m.setView([x.lat, x.lng], Math.max(m.getZoom(), 15));
-        const mk = exploraRef.current.find(k => String(k._idLugar) === String(x.id));
-        if (mk) mk.openPopup();
+        setSel({
+          tipo: "lugar",
+          x: x
+        });
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -12842,8 +13241,9 @@ function VisaoFamilia() {
     const m = L.map(ref.current, {
       attributionControl: false
     }).setView([pos.lat, pos.lng], 11);
-    L.tileLayer("https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png", {
-      attribution: "Wikimedia | OpenStreetMap"
+    criarCamadaBase(m);
+    L.control.attribution({
+      prefix: false
     }).addTo(m);
     mapRef.current = m;
   }, [pos]);
