@@ -913,7 +913,10 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .modos-mapa button{flex:1;border:0;background:none;border-radius:99px;padding:8px 6px;font-weight:600;font-size:0.8125em;color:var(--tinta2)}
 .modos-mapa button.on{background:var(--cartao);color:var(--tinta);box-shadow:0 1px 3px rgba(13,13,13,.12)}
 .mapa-sub{font-size:0.75em;color:var(--tinta2);margin:0 2px 6px}
-.mapa-caixa{position:relative}
+.mapa-caixa{position:relative;z-index:0;isolation:isolate}
+.mapa-dia{display:flex;align-items:center;gap:8px}
+.mapa-dia .t{flex:1;min-width:0;text-align:center;font-weight:600;color:var(--tinta)}
+.mapa-dia .pill{padding:4px 12px}
 .leaflet-container.sem-base{background:var(--papel2)}
 .aviso-base{position:absolute;left:10px;right:10px;bottom:26px;z-index:550;background:var(--cartao);border:1px solid var(--linha);border-radius:10px;padding:8px 11px;font-size:0.7188em;color:var(--tinta2);box-shadow:0 2px 8px rgba(13,13,13,.08);pointer-events:none}
 .mapa-dica{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;background:var(--cartao);border:1px solid var(--linha);border-radius:99px;padding:6px 12px;font-size:0.75em;color:var(--tinta2);box-shadow:0 2px 8px rgba(13,13,13,.1);white-space:nowrap}
@@ -1404,7 +1407,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-06 11:08"
+  versao: "2026-10-06 12:19"
 };
 
 /* ============================================================
@@ -2750,7 +2753,7 @@ function AcoesDoLugar({
   if (e.tipo === "hotel") links.push(["Ver hoteis", linkAfiliado("hospedagem", dadosAf) ? linkAfiliado("hospedagem", dadosAf).url : g("hotel em " + cidade)]);
   if (["passeio", "evento", "praia"].indexOf(e.tipo) >= 0) links.push(["Onde comprar ingresso", g(lugar + " " + cidade + " ingresso comprar")]);
   if (e.tipo === "refeicao") links.push(["Ver o lugar", g(lugar + " " + cidade + " cardapio avaliacoes")]);
-  if (["voo", "transfer"].indexOf(e.tipo) >= 0) links.push(["Como ir", g("como ir de " + (e.localInicio || cidade) + " para " + (e.localFim || cidade))]);
+  if (["voo", "transfer"].indexOf(e.tipo) >= 0) links.push(["Como ir", e.tipo === "transfer" && e.latIni != null && e.lat != null ? urlRotaEvento(e) : g("como ir de " + (e.localInicio || cidade) + " para " + (e.localFim || cidade))]);
   links.push(["Pesquisar sobre o lugar", g(lugar + " " + cidade)]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9273,6 +9276,19 @@ function proximoComPonto(eventos, agora) {
   return (eventos || []).filter(e => !e.fundo && e.status !== "cancelado" && e.horaInicio && pontoIni(e) && inicioAbs(e) > agora).sort((a, b) => inicioAbs(a) - inicioAbs(b))[0] || null;
 }
 // Bottom sheet do mapa: evento do roteiro, cidade da viagem ou lugar do Explorar
+// rota no Google Maps: trecho (voo/transfer ou saida marcada) vai da saida ate a chegada;
+// lugar unico vai ate ele, partindo de onde a pessoa estiver
+function urlRotaEvento(e) {
+  const fim = pontoFim(e),
+    ini = e.latIni != null ? {
+      lat: e.latIni,
+      lng: e.lngIni
+    } : null;
+  const dest = fim || ini;
+  if (!dest) return null;
+  const modo = e.tipo === "voo" ? "" : "&travelmode=" + (e.tipo === "transfer" ? "driving" : "transit");
+  return "https://www.google.com/maps/dir/?api=1" + (ini && fim && (ini.lat !== fim.lat || ini.lng !== fim.lng) ? "&origin=" + ini.lat + "," + ini.lng : "") + "&destination=" + dest.lat + "," + dest.lng + modo;
+}
 function FolhaMapa({
   sel,
   dados,
@@ -9315,6 +9331,7 @@ function FolhaMapa({
     const c = conexoesDoDia(doDia, dados.ignorados)[e.id];
     const p = pontoIni(e) || pontoFim(e);
     const hojeIso = new Date(agora + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
+    const urlRota = urlRotaEvento(e);
     return /*#__PURE__*/React.createElement("div", {
       className: "folha-mapa"
     }, cab(t.k, (sel.n ? sel.n + ". " : "") + e.titulo, [t.n, "Dia " + numDia(e.dia), e.horaInicio ? fmtHora(i, e.tz) + (e.duracaoMin ? "\u2013" + fmtHora(f, e.tzFim != null ? e.tzFim : e.tz) : "") : ""].filter(Boolean).join(" \u00B7 ")), (e.localFim || e.localInicio || e.cidade) && /*#__PURE__*/React.createElement("div", {
@@ -9331,14 +9348,17 @@ function FolhaMapa({
       className: "fm-acoes"
     }, /*#__PURE__*/React.createElement("button", {
       className: "btn",
-      onClick: () => acoes.abrirEvento(e)
-    }, "Ver evento"), p && /*#__PURE__*/React.createElement("a", {
+      onClick: () => {
+        onFechar();
+        acoes.abrirEvento(e);
+      }
+    }, "Ver evento"), urlRota && /*#__PURE__*/React.createElement("a", {
       className: "btn sec",
       style: {
         textDecoration: "none",
         textAlign: "center"
       },
-      href: "https://www.google.com/maps/dir/?api=1&destination=" + p.lat + "," + p.lng,
+      href: urlRota,
       target: "_blank",
       rel: "noopener"
     }, "Ver rota"), e.data === hojeIso && /*#__PURE__*/React.createElement("button", {
@@ -9437,6 +9457,9 @@ function AbaMapa({
     return dados.eventos.some(e => e.data === h && e.lat != null) ? "hoje" : "viagem";
   });
   const agoraMapa = Date.now();
+  // dia escolhido no modo Hoje (null = hoje ou o proximo dia com eventos)
+  const [diaMapa, setDiaMapa] = useState(null);
+  const datasComEventos = [...new Set(dados.eventos.filter(e => e.data && e.status !== "cancelado").map(e => e.data))].sort();
   const [buscando, setBuscando] = useState(false);
   const [achados, setAchados] = useState([]);
   const [vistos, setVistos] = useState(() => {
@@ -9574,7 +9597,7 @@ function AbaMapa({
     });
     const hojeIso = new Date(agoraMapa + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
     if (modo === "hoje") {
-      const data = diaDoMapa(dados.eventos, hojeIso);
+      const data = diaMapa || diaDoMapa(dados.eventos, hojeIso);
       const doDia = dados.eventos.filter(e => e.data === data && e.status !== "cancelado");
       const seq = doDia.filter(e => !e.fundo && e.horaInicio && (pontoIni(e) || pontoFim(e))).sort((a, b) => inicioAbs(a) - inicioAbs(b));
       const atual = seq.find(e => agoraMapa >= inicioAbs(e) && agoraMapa < fimAbs(e));
@@ -9680,7 +9703,7 @@ function AbaMapa({
       maxZoom: modo === "hoje" ? 16 : 9
     });
     m._enquadre = chave;
-  }, [dados.checkins, dados.eventos, posFamilia, modo, sel]);
+  }, [dados.checkins, dados.eventos, posFamilia, modo, sel, diaMapa]);
   // lugares do Explorar, agrupados quando ficam perto demais na tela
   useEffect(() => {
     const m = mapRef.current;
@@ -9739,11 +9762,38 @@ function AbaMapa({
     className: modo === k ? "on" : "",
     onClick: () => {
       setSel(null);
+      if (k === "hoje") setDiaMapa(null);
       setModo(k);
     }
-  }, t))), modo === "hoje" && mapRef.current && mapRef.current._diaMapa && /*#__PURE__*/React.createElement("div", {
-    className: "mapa-sub"
-  }, "Dia ", numDia((dados.eventos.find(e => e.data === mapRef.current._diaMapa) || {}).dia || 0), " \u00B7 ", dataCurtaSemana(mapRef.current._diaMapa), mapRef.current._diaMapa !== new Date(agoraMapa + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10) ? " (proximo dia com eventos)" : ""), modo === "explorar" && /*#__PURE__*/React.createElement("div", {
+  }, t))), modo === "hoje" && (() => {
+    const hojeIso = new Date(agoraMapa + fusoLocalDispositivo() * 60000).toISOString().slice(0, 10);
+    const d = diaMapa || diaDoMapa(dados.eventos, hojeIso);
+    if (!d) return null;
+    const k = datasComEventos.indexOf(d);
+    const ir = n => datasComEventos[k + n] && (setSel(null), setDiaMapa(datasComEventos[k + n]));
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mapa-sub mapa-dia"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "pill",
+      disabled: k <= 0,
+      "aria-label": "Dia anterior",
+      onClick: () => ir(-1)
+    }, "\u2039"), /*#__PURE__*/React.createElement("span", {
+      className: "t"
+    }, "Dia ", numDia((dados.eventos.find(e => e.data === d) || {}).dia || 0), " ", "\u00B7", " ", dataCurtaSemana(d), !diaMapa && d !== hojeIso ? " (proximo dia com eventos)" : ""), /*#__PURE__*/React.createElement("button", {
+      className: "pill",
+      disabled: k < 0 || k >= datasComEventos.length - 1,
+      "aria-label": "Proximo dia",
+      onClick: () => ir(1)
+    }, "\u203A"), diaMapa && /*#__PURE__*/React.createElement("button", {
+      className: "pend-link",
+      style: {
+        color: "var(--tinta2)",
+        fontWeight: 600
+      },
+      onClick: () => setDiaMapa(null)
+    }, "Hoje"));
+  })(), modo === "explorar" && /*#__PURE__*/React.createElement("div", {
     className: "filtros",
     style: {
       marginTop: 8,
@@ -9784,12 +9834,8 @@ function AbaMapa({
     onFechar: () => setSel(null),
     onAproximar: p => {
       setSel(null);
-      const m = mapRef.current;
-      const pts = dados.eventos.filter(e => e.lat != null && e.data >= p.dataIni && e.data <= p.dataFim).map(e => [e.lat, e.lng]);
-      if (m && pts.length) m.fitBounds(pts, {
-        padding: [44, 44],
-        maxZoom: 15
-      });
+      setDiaMapa(p.dataIni);
+      setModo("hoje");
     }
   })), (() => {
     const semPonto = dados.eventos.filter(precisaDePonto);
