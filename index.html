@@ -914,6 +914,8 @@ nav .tx{font-size:0.6562em;font-weight:700;letter-spacing:.02em}
 .modos-mapa button.on{background:var(--cartao);color:var(--tinta);box-shadow:0 1px 3px rgba(13,13,13,.12)}
 .mapa-sub{font-size:0.75em;color:var(--tinta2);margin:0 2px 6px}
 .mapa-caixa{position:relative}
+.leaflet-container.sem-base{background:var(--papel2)}
+.aviso-base{position:absolute;left:10px;right:10px;bottom:26px;z-index:550;background:var(--cartao);border:1px solid var(--linha);border-radius:10px;padding:8px 11px;font-size:0.7188em;color:var(--tinta2);box-shadow:0 2px 8px rgba(13,13,13,.08);pointer-events:none}
 .mapa-dica{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;background:var(--cartao);border:1px solid var(--linha);border-radius:99px;padding:6px 12px;font-size:0.75em;color:var(--tinta2);box-shadow:0 2px 8px rgba(13,13,13,.1);white-space:nowrap}
 .pin-n{position:relative;width:30px;height:30px;border-radius:99px;background:var(--cartao);border:2px solid var(--tinta);color:var(--tinta);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(13,13,13,.22);font-family:"Avenir Next",Avenir,Inter,sans-serif}
 .pin-n b{font-size:13px;font-weight:800;line-height:1}
@@ -1402,7 +1404,7 @@ const CONFIG = {
   prefixo: "rt_",
   // Identificadores de quem administra a plataforma. Aparece em Ajustes depois de entrar.
   admins: ["Lwmp7kTbzoYE7kKVobIK48AwQ9B2"],
-  versao: "2026-10-05 22:37"
+  versao: "2026-10-06 11:08"
 };
 
 /* ============================================================
@@ -2541,6 +2543,13 @@ function coordsDoTexto(t) {
   };
 }
 async function buscarNominatim(q) {
+  const guardado = CacheTemp.ler("nominatim", q.toLowerCase());
+  if (guardado) return guardado;
+  const l = await buscarNominatimRede(q);
+  CacheTemp.gravar("nominatim", q.toLowerCase(), l);
+  return l;
+}
+async function buscarNominatimRede(q) {
   const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&accept-language=pt-BR&q=" + encodeURIComponent(q));
   const j = await r.json();
   return (j || []).map(x => {
@@ -2555,6 +2564,14 @@ async function buscarNominatim(q) {
   });
 }
 async function buscarPhoton(q, perto) {
+  const k = q.toLowerCase() + (perto ? "@" + (+perto.lat).toFixed(1) + "," + (+perto.lng).toFixed(1) : "");
+  const guardado = CacheTemp.ler("photon", k);
+  if (guardado) return guardado;
+  const l = await buscarPhotonRede(q, perto);
+  CacheTemp.gravar("photon", k, l);
+  return l;
+}
+async function buscarPhotonRede(q, perto) {
   let u = "https://photon.komoot.io/api/?limit=5&q=" + encodeURIComponent(q);
   if (perto) u += "&lat=" + perto.lat + "&lon=" + perto.lng;
   const r = await fetch(u);
@@ -3072,28 +3089,96 @@ function offsetDoFuso(nomeFuso, dataIso) {
     return null;
   }
 }
+/* ---------- Cache temporario de servicos externos ----------
+   Resultados de busca de lugar, fuso e (no futuro) rotas ficam guardados so por um
+   tempo, com expiracao. Guardar de vez depende do provedor/plano permitir: quando
+   permitir, basta marcar "persistente" na politica dele. Nada aqui e permanente. */
+const POLITICA_CACHE = {
+  // Stadia: no Starter o armazenamento e temporario; persistente so em planos maiores (confirmar nos termos)
+  stadia: {
+    persistente: false,
+    ttl: 24 * 3600000
+  },
+  nominatim: {
+    persistente: false,
+    ttl: 24 * 3600000
+  },
+  photon: {
+    persistente: false,
+    ttl: 24 * 3600000
+  },
+  openmeteo: {
+    persistente: false,
+    ttl: 7 * 24 * 3600000
+  }
+};
+const CacheTemp = {
+  prefixo: () => CONFIG.prefixo + "cache:",
+  ler(prov, k, agora) {
+    agora = agora || Date.now();
+    try {
+      const ch = this.prefixo() + prov + ":" + k;
+      const r = JSON.parse(localStorage.getItem(ch) || "null");
+      if (!r) return null;
+      if (!(POLITICA_CACHE[prov] || {}).persistente && r.ate <= agora) {
+        localStorage.removeItem(ch);
+        return null;
+      }
+      return r.v;
+    } catch (e) {
+      return null;
+    }
+  },
+  gravar(prov, k, v, agora) {
+    agora = agora || Date.now();
+    const pol = POLITICA_CACHE[prov] || {
+      persistente: false,
+      ttl: 3600000
+    };
+    try {
+      localStorage.setItem(this.prefixo() + prov + ":" + k, JSON.stringify({
+        v: v,
+        ate: agora + pol.ttl
+      }));
+    } catch (e) {}
+  },
+  // apaga o que venceu (roda ao abrir o app)
+  limpar(agora) {
+    agora = agora || Date.now();
+    const pre = this.prefixo();
+    try {
+      Object.keys(localStorage).filter(k => k.indexOf(pre) === 0).forEach(k => {
+        const prov = k.slice(pre.length).split(":")[0];
+        if ((POLITICA_CACHE[prov] || {}).persistente) return;
+        let r = null;
+        try {
+          r = JSON.parse(localStorage.getItem(k));
+        } catch (e) {}
+        if (!r || r.ate <= agora) localStorage.removeItem(k);
+      });
+      // cache antigo de fusos (permanente) sai
+      localStorage.removeItem(CONFIG.prefixo + "fusos_coord");
+    } catch (e) {}
+  },
+  podePersistir: prov => !!(POLITICA_CACHE[prov] || {}).persistente
+};
+try {
+  setTimeout(() => CacheTemp.limpar(), 3000);
+} catch (e) {}
+
 /* ---------- Fuso automatico (P1-1) ----------
    O fuso vem do lugar: coordenada do ponto (servico de clima devolve o fuso IANA)
    ou, sem ponto, a cidade. Voo/transfer: saida define tz, chegada define tzFim.
    Fuso escolhido a mao (tzManual / tzFimManual) nunca e sobrescrito. */
-const CACHE_FUSO = () => CONFIG.prefixo + "fusos_coord";
 async function fusoDaCoordenada(lat, lng) {
   if (lat == null || lng == null) return null;
   const k = (+lat).toFixed(2) + "," + (+lng).toFixed(2);
-  let c = {};
-  try {
-    c = JSON.parse(localStorage.getItem(CACHE_FUSO()) || "{}");
-  } catch (e) {}
-  if (c[k]) return c[k];
+  const guardado = CacheTemp.ler("openmeteo", "fuso:" + k);
+  if (guardado) return guardado;
   const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lng + "&timezone=auto&forecast_days=1&daily=sunrise");
   const j = await r.json();
   const nome = j && j.timezone && j.timezone !== "GMT" ? j.timezone : null;
-  if (nome) {
-    c[k] = nome;
-    try {
-      localStorage.setItem(CACHE_FUSO(), JSON.stringify(c));
-    } catch (e) {}
-  }
+  if (nome) CacheTemp.gravar("openmeteo", "fuso:" + k, nome);
   return nome;
 }
 const NOMES_FUSO = {
@@ -9075,44 +9160,57 @@ const MAPA_BASE = Object.assign({
   estilo: "alidade_smooth",
   chave: ""
 }, typeof CONFIG !== "undefined" && CONFIG.mapa || {});
-function criarCamadaBase(m) {
-  const reserva = [{
-    url: "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
-    attr: "Wikimedia | &copy; OpenStreetMap"
-  }, {
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attr: "&copy; OpenStreetMap"
-  }];
-  const opcoes = MAPA_BASE.provedor === "stadia" ? [{
-    url: "https://tiles.stadiamaps.com/tiles/" + MAPA_BASE.estilo + "/{z}/{x}/{y}{r}.png" + (MAPA_BASE.chave ? "?api_key=" + MAPA_BASE.chave : ""),
+// Sem reserva publica: os tiles do Wikimedia e do OpenStreetMap nao permitem uso comercial
+// em app. Se a base licenciada falhar, o mapa fica sem fundo (papel liso) e continua
+// mostrando pontos, linhas e cards; a lista de eventos segue igual.
+const BASES_LICENCIADAS = {
+  stadia: e => ({
+    url: "https://tiles.stadiamaps.com/tiles/" + e.estilo + "/{z}/{x}/{y}{r}.png" + (e.chave ? "?api_key=" + e.chave : ""),
     attr: "&copy; <a href=\"https://stadiamaps.com/\" target=\"_blank\">Stadia Maps</a> &copy; <a href=\"https://openmaptiles.org/\" target=\"_blank\">OpenMapTiles</a> &copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">OpenStreetMap</a>"
-  }].concat(reserva) : reserva;
-  let i = 0,
-    falhas = 0,
-    camada = null;
-  const usar = () => {
-    if (camada) m.removeLayer(camada);
-    falhas = 0;
-    const o = opcoes[i];
-    camada = L.tileLayer(o.url, {
-      maxZoom: 19,
-      attribution: o.attr
-    });
-    // se a base nao carregar (dominio nao cadastrado, fora do ar), cai para a proxima
-    camada.on("tileerror", () => {
-      falhas++;
-      if (falhas === 6 && i < opcoes.length - 1) {
-        i++;
-        usar();
-      }
-    });
-    camada.addTo(m);
+  })
+};
+function criarCamadaBase(m) {
+  const fabrica = BASES_LICENCIADAS[MAPA_BASE.provedor];
+  const semBase = motivo => {
+    const c = m.getContainer();
+    c.classList.add("sem-base");
+    if (!c.querySelector(".aviso-base")) {
+      const d = document.createElement("div");
+      d.className = "aviso-base";
+      d.textContent = "Mapa de fundo indisponivel agora. Os pontos, as distancias e a lista continuam funcionando.";
+      c.appendChild(d);
+    }
     m._base = {
-      provedor: i === 0 ? MAPA_BASE.provedor : "reserva",
-      url: o.url
+      provedor: "nenhum",
+      motivo: motivo
     };
   };
-  usar();
+  if (!fabrica) {
+    semBase("sem provedor licenciado");
+    return null;
+  }
+  const o = fabrica(MAPA_BASE);
+  const camada = L.tileLayer(o.url, {
+    maxZoom: 19,
+    attribution: o.attr
+  });
+  let falhas = 0,
+    carregou = false;
+  camada.on("tileload", () => {
+    carregou = true;
+  });
+  camada.on("tileerror", () => {
+    falhas++;
+    if (falhas === 6 && !carregou) {
+      m.removeLayer(camada);
+      semBase("base nao respondeu");
+    }
+  });
+  camada.addTo(m);
+  m._base = {
+    provedor: MAPA_BASE.provedor,
+    url: o.url
+  };
   return camada;
 }
 const svgIco = (n, t) => '<svg width="' + t + '" height="' + t + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' + (CAMINHOS[n] || "") + '"/></svg>';
