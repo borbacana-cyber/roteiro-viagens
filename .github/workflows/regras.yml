@@ -1,1 +1,33 @@
 
+# Roda os testes das regras do Azivo no Emulator Suite a cada mudanca nas regras.
+# Coloque a pasta regras/ na raiz do repositorio e este arquivo em .github/workflows/regras.yml
+
+name: Regras do Firebase
+
+on:
+  push:
+    paths: ["regras/**", ".github/workflows/regras.yml"]
+  workflow_dispatch:
+
+jobs:
+  regras:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: regras
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+      - run: npm test
