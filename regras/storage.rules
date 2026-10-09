@@ -1,0 +1,39 @@
+rules_version = '2';
+// Firebase Storage do Azivo (Momentos). Usado a partir da fase 2.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function viagemDoc(viagem) {
+      return /databases/(default)/documents/rt_memorias/$(viagem);
+    }
+    function membro(viagem) {
+      return request.auth != null
+        && firestore.exists(viagemDoc(viagem))
+        && request.auth.uid in firestore.get(viagemDoc(viagem)).data.membros
+        && firestore.get(viagemDoc(viagem)).data.membros[request.auth.uid] != null;
+    }
+    function escreve(viagem) {
+      return membro(viagem)
+        && firestore.get(viagemDoc(viagem)).data.membros[request.auth.uid].papel in ['dono', 'editor'];
+    }
+    // foto, video e audio; ate 50 MB por arquivo (video de ate 60 s e conferido no app)
+    function arquivoValido() {
+      return request.resource.size <= 50 * 1024 * 1024
+        && request.resource.contentType.matches('(image|video|audio)/.*');
+    }
+
+    // Participantes da viagem: so quem esta na lista de membros da viagem
+    match /memorias/{viagem}/{momento}/{arquivo} {
+      allow read: if membro(viagem);
+      allow create, update: if escreve(viagem) && arquivoValido();
+      allow delete: if escreve(viagem);
+    }
+
+    // Privado: so o dono da conta
+    match /memorias_privadas/{uid}/{viagem}/{momento}/{arquivo} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid && arquivoValido();
+    }
+
+    match /{todo=**} { allow read, write: if false; }
+  }
+}

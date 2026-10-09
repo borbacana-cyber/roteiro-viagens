@@ -1,0 +1,13 @@
+{
+  "name": "azivo-regras",
+  "private": true,
+  "description": "Testes das regras do Firestore e do Storage do Azivo no Emulator Suite",
+  "scripts": {
+    "test": "firebase emulators:exec --project demo-azivo --only firestore,storage \"node testeRegras.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.14.1",
+    "firebase-tools": "^13.29.1"
+  }
+}

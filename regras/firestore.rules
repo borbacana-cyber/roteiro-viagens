@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ehAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'Lwmp7kTbzoYE7kKVobIK48AwQ9B2';
+    }
+
+    // ================= colecoes que ja existiam: copiadas sem nenhuma mudanca =================
+    match /rt_viagens/{doc}   { allow get, write: if request.time < timestamp.date(2027,3,1); allow list: if false; }
+    match /rt_posicoes/{doc}  { allow get, write: if request.time < timestamp.date(2027,3,1); allow list: if false; }
+    match /rt_pessoais/{doc}  { allow read, write: if request.time < timestamp.date(2027,3,1); }
+    match /rt_usuarios/{uid}  { allow read, write: if request.auth != null && request.auth.uid == uid;
+                                allow read: if ehAdmin(); }
+    match /rt_config/{doc}    { allow read: if true; allow write: if ehAdmin(); }
+    match /rt_publicados/{doc}{ allow read, write: if request.time < timestamp.date(2027,3,1); }
+    match /rt_conteudo/{doc}  { allow get, write: if request.time < timestamp.date(2027,3,1); allow list: if false; }
+    // ================= fim das colecoes antigas =================
+
+    // ================= MOMENTOS =================
+    function caminhoViagem(viagem) {
+      return /databases/$(database)/documents/rt_memorias/$(viagem);
+    }
+    function membro(viagem) {
+      return request.auth != null
+        && exists(caminhoViagem(viagem))
+        && request.auth.uid in get(caminhoViagem(viagem)).data.membros
+        && get(caminhoViagem(viagem)).data.membros[request.auth.uid] != null;
+    }
+    function papel(viagem) {
+      return get(caminhoViagem(viagem)).data.membros[request.auth.uid].papel;
+    }
+    function escreve(viagem) {
+      return membro(viagem) && papel(viagem) in ['dono', 'editor'];
+    }
+    function ehDono(viagem) {
+      return membro(viagem) && papel(viagem) == 'dono';
+    }
+
+    // Claim de criacao: segredo gerado no aparelho que cria a viagem, gravado ANTES do primeiro
+    // envio do roteiro. Viagem que ja existe na nuvem nao aceita claim novo (so o admin).
+    // Ninguem le: as regras conferem com get(), que nao depende de permissao de leitura.
+    match /rt_claims/{viagem} {
+      allow create: if (!exists(/databases/$(database)/documents/rt_viagens/$(viagem)) || ehAdmin())
+        && request.resource.data.keys().hasOnly(['segredo', 'criadoEm'])
+        && request.resource.data.segredo is string
+        && request.resource.data.segredo.size() >= 24;
+      allow read, update, delete: if false;
+    }
+
+    // rt_memorias/{viagem}: { viagemId, dono, membros: { uid: { papel, via?, desde } }, claim?, criadoEm }
+    match /rt_memorias/{viagem} {
+      // participante le; quem nao e participante so descobre que o documento nao existe ainda
+      allow get: if request.auth != null && (resource == null || (request.auth.uid in resource.data.membros && resource.data.membros[request.auth.uid] != null));
+      allow list, delete: if false;
+
+      // Dono nunca por ordem de chegada: precisa do claim de criacao da viagem (ou ser o admin)
+      allow create: if request.auth != null
+        && request.resource.data.viagemId == viagem
+        && request.resource.data.dono is string
+        && request.resource.data.membros.keys().hasOnly([request.resource.data.dono])
+        && request.resource.data.membros[request.resource.data.dono].keys().hasOnly(['papel', 'desde'])
+        && request.resource.data.membros[request.resource.data.dono].papel == 'dono'
+        && (
+          (
+            request.resource.data.dono == request.auth.uid
+            && request.resource.data.get('claim', '') is string
+            && request.resource.data.get('claim', '').size() >= 24
+            && exists(/databases/$(database)/documents/rt_claims/$(viagem))
+            && request.resource.data.get('claim', '') == get(/databases/$(database)/documents/rt_claims/$(viagem)).data.segredo
+          )
+          || ehAdmin()
+        );
+
+      allow update: if request.auth != null && (
+          // dono: gerencia os membros; nao muda viagemId nem dono, nao mexe na propria entrada; claim so pode ser apagado
+          (
+            request.auth.uid == resource.data.dono
+            && request.resource.data.viagemId == resource.data.viagemId
+            && request.resource.data.dono == resource.data.dono
+            && request.resource.data.membros[request.auth.uid] == resource.data.membros[request.auth.uid]
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['membros', 'claim'])
+            && (!('claim' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.get('claim', '') == '')
+          )
+          ||
+          // entrar com convite: so acrescenta a propria entrada, com um token que existe e o papel do token
+          (
+            !(request.auth.uid in resource.data.membros)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['membros'])
+            && request.resource.data.membros.diff(resource.data.membros).affectedKeys().hasOnly([request.auth.uid])
+            && request.resource.data.membros[request.auth.uid].keys().hasOnly(['papel', 'via', 'desde'])
+            && request.resource.data.membros[request.auth.uid].papel in ['editor', 'leitor']
+            && request.resource.data.membros[request.auth.uid].via is string
+            && exists(/databases/$(database)/documents/rt_memorias/$(viagem)/convites/$(request.resource.data.membros[request.auth.uid].via))
+            && get(/databases/$(database)/documents/rt_memorias/$(viagem)/convites/$(request.resource.data.membros[request.auth.uid].via)).data.papel
+               == request.resource.data.membros[request.auth.uid].papel
+          )
+        );
+
+      // tokens de convite: dono/editor criam (nunca de dono); ninguem le
+      match /convites/{token} {
+        allow create: if escreve(viagem)
+          && token.size() >= 24
+          && request.resource.data.keys().hasOnly(['papel', 'criadoPor', 'criadoEm'])
+          && request.resource.data.papel in ['editor', 'leitor']
+          && request.resource.data.criadoPor == request.auth.uid;
+        allow read, update, delete: if false;
+      }
+
+      // lista dos tokens atuais: so dono e editor (leitor nao enxerga o token de editor)
+      match /acesso/{doc} {
+        allow read, write: if escreve(viagem);
+      }
+
+      // momentos do grupo, compartilhaveis e publicos. Privado nunca entra aqui.
+      match /momentos/{id} {
+        function novo() { return request.resource.data; }
+        function antigo() { return resource.data; }
+        function semPrivado() { return novo().get('privacidade', '') != 'privado'; }
+        function idCerto() { return novo().get('id', '') == id; }
+
+        allow read: if membro(viagem);
+
+        allow create: if escreve(viagem) && idCerto() && semPrivado() && (
+            // registro proprio: o autor e quem grava
+            novo().get('autorId', null) == request.auth.uid
+            ||
+            // registro migrado do legado: sem autor, so como Participantes, com id de migracao
+            (
+              novo().get('autorId', null) == null
+              && novo().get('origem', '') == 'migrado'
+              && id.matches('m_mig_.*')
+              && novo().get('privacidade', 'grupo') in ['grupo', '']
+            )
+          );
+
+        allow update: if escreve(viagem) && idCerto() && semPrivado()
+          && novo().get('origem', '') == antigo().get('origem', '')
+          && (
+            // o autor edita o seu e continua autor
+            (antigo().get('autorId', null) == request.auth.uid && novo().get('autorId', null) == request.auth.uid)
+            ||
+            // registro do grupo (migrado, sem autor): qualquer editor, continua sem autor e so como Participantes
+            (antigo().get('autorId', null) == null && novo().get('autorId', null) == null
+              && novo().get('privacidade', 'grupo') in ['grupo', ''])
+            ||
+            // o dono pode tudo (inclusive assumir um registro do grupo)
+            ehDono(viagem)
+          );
+
+        // remocao e por marca (removido), para nenhum aparelho recriar
+        allow delete: if false;
+      }
+    }
+
+    // momentos privados: so o proprio usuario
+    match /rt_memorias_privadas/{uid}/momentos/{id} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.get('id', '') == id;
+    }
+
+    match /{document=**}      { allow read, write: if false; }
+  }
+}
